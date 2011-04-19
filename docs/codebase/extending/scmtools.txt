@@ -1,0 +1,200 @@
+.. _writing-scmtools:
+
+================
+Writing SCMTools
+================
+
+Overview
+========
+
+SCMTools are the communication layer between Review Board and a code
+repository. They are fairly simple classes that handle a few key operations.
+Mainly:
+
+* Fetching files (provided a name and revision)
+* Determining file existence
+* Normalizing diff revisions
+* Determining repository validity
+* Providing custom parsing of diffs for that repository
+
+SCMTools can be provided by third-party modules and registered in such
+a way where Review Board can find them.
+
+A typical SCMTool has two classes: A SCMTool subclass, and a DiffParser
+subclass. The latter is needed for any custom revision extracting for
+diffs.
+
+
+Defining SCMTools
+=================
+
+A SCMTool class inherits from :py:class:`reviewboard.scmtools.core.SCMTool`.
+It must provide the following attributes:
+
+* :py:attr:`name`
+
+And can optionally set the following attributes:
+
+* :py:attr:`dependencies`
+* :py:attr:`diff_uses_changeset_ids`
+* :py:attr:`supports_authentication`
+* :py:attr:`supports_raw_file_urls`
+* :py:attr:`uses_atomic_revisions`
+
+It must also define the methods:
+
+* :py:meth:`get_fields`
+* :py:meth:`get_file`
+* :py:meth:`parse_diff_revision`
+
+And can optionally define the methods:
+
+* :py:meth:`accept_certificate`
+* :py:meth:`check_repository`
+* :py:meth:`file_exists`
+* :py:meth:`get_auth_from_uri`
+* :py:meth:`get_changeset`
+* :py:meth:`get_diffs_use_absolute_paths`
+* :py:meth:`get_parse`
+* :py:meth:`get_repository_info`
+* :py:meth:`normalize_path_for_display`
+
+We provide a `class reference`_ below that covers these in detail. First,
+we'll discuss the types of common SCMTools and what you may need to
+implement.
+
+
+.. _`class reference`:
+
+Class References
+================
+
+SCMTool
+-------
+
+.. py:class:: reviewboard.scmtools.core.SCMTool
+
+
+Attributes
+~~~~~~~~~~
+
+.. py:attribute:: dependencies
+
+   A dictionary defining executable dependencies and Python module
+   dependencies needed for this SCMTool.
+
+   :py:attr:`dependencies` has two keys: ``executables`` and ``modules``.
+   Each map to a list of names.
+
+   The list of executable names should be without any suffix (no ``.exe``,
+   for example), as Review Board will automatically try variants of the
+   name.
+
+   The list of Python module names must, of course, be valid Python
+   module names.
+
+   By default, each list is empty.
+
+
+.. py:attribute:: diff_uses_changeset_ids
+
+   Some systems (such as Mercurial) use atomic changeset IDs in the
+   revision fields of a diff. Instead of per-file revisions in the diff,
+   which may all be different, each file would list the same identifier.
+   This flag indicates whether that is true for this SCMTool.
+
+   If ``True``, the first revision found in a diff will be used for fetching
+   and identifying all subsequent files. Otherwise, the revisions are
+   allowed to possibly differ per file.
+
+   By default, this is ``False``.
+
+
+.. py:attribute:: name
+
+   This is the human-readable name of the SCMTool. Users will see this
+   when they go to select a repository type. Some examples would be
+   "Subversion" or "Perforce".
+
+
+.. py:attribute:: supports_authentication
+
+   Indicates whether the SCMTool should allow for authentication credentials
+   to be used when talking to the repository. This makes sense for most
+   types of repositories.
+
+   By default, this is ``False``.
+
+
+.. py:attribute:: supports_raw_file_urls
+
+   Some systems (such as Git) have no way of accessing an individual file
+   in a repository over a network without having a complete checkout on
+   the Review Board server. For those, Review Board can offer a field for
+   specifying a URL mask for accessing raw files through a web interface.
+
+   If ``True``, this field will be shown in the repository configuration.
+   It's up to the SCMTool to handle and parse the value, though.
+
+   By default, this is ``False``.
+
+
+.. py:attribute:: uses_atomic_revisions
+
+   Some systems (such as Subversion) use a single revision to represent
+   all the changes made to all files in a commit. Others (such as CVS)
+   have per-file revisions instead, with no atomic indicator representing
+   that particular commit.
+
+   If ``True``, a single revision is used to represent the commit. Otherwise,
+   revisions are only per-file.
+
+   By default, this is ``False``.
+
+
+Functions
+~~~~~~~~~
+
+.. py:method:: get_fields()
+
+   :rtype: A list of fields to explicitly show in the Upload Diff and
+           New Review Request forms.
+
+   Returns a list of fields that should be shown in the Upload Diff and
+   New Review Request forms.
+
+   This supports only a few very specific field names.
+
+   * ``basedir`` - The :guilabel:`Base Directory` field. See
+     `Base directories`_ above.
+   * ``changenum`` - The :guilabel:`Change Number` field. See
+     `Changesets`_ above.
+   * ``diff_path`` - The :guilabel:`Diff Path` field for choosing a diff to
+     upload.
+   * ``parent_diff_path`` - The :guilabel:`Parent Diff Path` field for
+     choosing a parent diff to upload. See `Parent Diffs`_ above.
+
+   .. note:: It is expected that this function will be replaced in time
+             with capability flags, much like the other attributes_ listed
+             above.
+
+
+.. py:method:: get_file(path, revision)
+
+   :param path: The absolute path to a file in the repository.
+   :param revision: The `revision <revisions>`_ of the file to fetch.
+   :rtype: The contents of the fetched file.
+
+   Attempts to retrieve a file from the repository, given a full path
+   and revision.
+
+   The revision will be a normalized `revision <revisions>`_.
+
+   If the file could not be found, this must throw a
+   :py:class:`FileNotFoundError`.
+
+   If the revision was not in a valid format, this must throw a
+   :py:class:`InvalidRevisionFormatError`.
+
+
+.. comment: vim: ft=rst et ts=3

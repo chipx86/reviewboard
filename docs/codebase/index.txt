@@ -32,9 +32,8 @@ Contributor Guides
    custom-forks
    extending/auth-backends
    extending/legacy-auth-backends
+   extending/scmtools
    unit-tests/fixtures
-
-.. `Creating SCMTools`
 
 
 Related Resources
