@@ -42,16 +42,65 @@ PRE_CREATION = Revision("PRE-CREATION")
 
 
 class SCMTool(object):
+    #: The human-readable name of the SCMTool. Users will see this
+    #: when  they go to select a repository type. Some examples would be
+    # "Subversion" or "Perforce".
     name = None
+
+    #: Some systems (such as Subversion) use a single revision to represent
+    #: all the changes made to all files in a commit. Others (such as CVS)
+    #: have per-file revisions instead, with no atomic indicator representing
+    #: that particular commit.
+    #:
+    #: If ``True``, a single revision is used to represent the commit. Otherwise,
+    #: revisions are only per-file.
+    #:
+    #: By default, this is ``False``.
     uses_atomic_revisions = False
+
+    #: Some systems (such as Mercurial) use atomic changeset IDs in the
+    #: revision fields of a diff. Instead of per-file revisions in the diff,
+    #: which may all be different, each file would list the same identifier.
+    #: This flag indicates whether that is true for this SCMTool.
+    #:
+    #: If ``True``, the first revision found in a diff will be used for fetching
+    #: and identifying all subsequent files. Otherwise, the revisions are
+    #: allowed to possibly differ per file.
+    #:
+    #: By default, this is ``False``.
     diff_uses_changeset_ids = False
+
+    #: Indicates whether the SCMTool should allow for authentication credentials
+    #: to be used when talking to the repository. This makes sense for most
+    #: types of repositories.
+    #:
+    #: By default, this is ``False``.
     supports_authentication = False
+
+    #: Some systems (such as Git) have no way of accessing an individual file
+    #: in a repository over a network without having a complete checkout on
+    #: the Review Board server. For those, Review Board can offer a field for
+    #: specifying a URL mask for accessing raw files through a web interface.
+    #:
+    #: If ``True``, this field will be shown in the repository configuration.
+    #: It's up to the SCMTool to handle and parse the value, though.
+    #:
+    #: By default, this is ``False``.
     supports_raw_file_urls = False
 
-    # A list of dependencies for this SCMTool. This should be overridden
-    # by subclasses. Python module names go in dependencies['modules'] and
-    # binary executables go in dependencies['executables'] (but without
-    # a path or file extension, such as .exe).
+    #: A dictionary containing lists of dependencies needed for this SCMTool.
+    #:
+    #: This should be overridden by subclasses that require certain
+    #: external modules or binaries. It has two keys: ``executables``
+    #: and ``modules``. Each map to a list of names.
+    #:
+    #: The list of Python modules go in ``modules``, and must be valid,
+    #: importable modules. If a module is not available, the SCMTool will
+    #: be disabled.
+    #:
+    #: The list of executables shouldn't contain a file extensions (namely,
+    #: ``.exe``), as Review Board will automatically attempt to use the
+    #: right extension for the platform.
     dependencies = {
         'executables': [],
         'modules': [],
@@ -61,6 +110,19 @@ class SCMTool(object):
         self.repository = repository
 
     def get_file(self, path, revision=None):
+        """Returns the contents of a file from a repository.
+
+        Provided a full path within the repository and a normalized
+        revision, this must attempt to fetch the raw contents of the file
+        from the repository.
+
+        :param path: The absolute path to a file in the repository.
+        :param revision: The revision of the file to fetch.
+        :rtype: The contents of the fetched file.
+        :raises FileNotFoundError: The file could not be found.
+        :raises InvalidRevisionFormatError: The revision was not in a
+                                            valid format.
+        """
         raise NotImplementedError
 
     def file_exists(self, path, revision=HEAD):
@@ -71,6 +133,18 @@ class SCMTool(object):
             return False
 
     def parse_diff_revision(self, file_str, revision_str):
+        """Parses a filename and revision as represented in an uploaded diff.
+
+        This must return a tuple with the normalized filename and revision.
+
+        A diff may use strings like ``(working copy)`` as a revision. This
+        function will be responsible for converting this to something
+        Review Board can understand.
+
+        :param file_str: The filename as represented in the diff.
+        :param revision_str: The revision as represented in the diff.
+        :rtype: A tuple in the form of (filename, revision).
+        """
         raise NotImplementedError
 
     def get_diffs_use_absolute_paths(self):
@@ -89,6 +163,25 @@ class SCMTool(object):
         raise NotImplementedError
 
     def get_fields(self):
+        """Returns a list of fields that should be shown in the Upload Diff and
+        New Review Request forms.
+
+        This supports only a few very specific field names.
+
+        * ``basedir`` - The :guilabel:`Base Directory` field.
+        * ``changenum`` - The :guilabel:`Change Number` field.
+        * ``diff_path`` - The :guilabel:`Diff Path` field for choosing a
+          diff to upload.
+        * ``parent_diff_path`` - The :guilabel:`Parent Diff Path` field for
+          choosing a parent diff to upload.
+
+        :rtype: A list of fields to explicitly show in the Upload Diff and
+                    New Review Request forms.
+
+        .. note:: It is expected that this function will be replaced in
+                  time with capability flags, much like the other
+                  attributes listed above.
+        """
         # This is kind of a crappy mess in terms of OO design.  Oh well.
         # Return a list of fields which are valid for this tool in the "new
         # review request" page.
@@ -125,7 +218,7 @@ class SCMTool(object):
         """
         Returns a 2-tuple of the username and hostname, given the path.
 
-        If a username is implicitly passed via the path (user@host), it
+        If a username is implicitly passed via the path (``user@host``), it
         takes precedence over a passed username.
         """
         url = urlparse.urlparse(path)
@@ -143,5 +236,13 @@ class SCMTool(object):
 
     @classmethod
     def accept_certificate(cls, path):
-        """Accepts the certificate for the given repository path."""
+        """Accepts the HTTPS certificate for the given repository path.
+
+        This is needed for repositories that support HTTPS-backed
+        repositories. It should mark an HTTPS certificate as accepted
+        so that the user won't see validation errors in the future.
+
+        The administration UI will call this after a user has seen and verified
+        the HTTPS certificate.
+        """
         raise NotImplemented
