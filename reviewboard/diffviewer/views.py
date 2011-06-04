@@ -15,6 +15,7 @@ from djblets.util.misc import cache_memoize, get_object_or_none
 from reviewboard.diffviewer.models import DiffSet, FileDiff
 from reviewboard.diffviewer.diffutils import UserVisibleError, \
                                              get_diff_files, \
+                                             get_enable_spell_checking, \
                                              get_enable_highlighting
 
 
@@ -72,6 +73,7 @@ def get_collapse_diff(request):
 def view_diff(request, diffset, interdiffset=None, extra_context={},
               template_name='diffviewer/view_diff.html'):
     highlighting = get_enable_highlighting(request.user)
+    checking = get_enable_spell_checking(request.user)
 
     try:
         if interdiffset:
@@ -83,7 +85,7 @@ def view_diff(request, diffset, interdiffset=None, extra_context={},
                           diffset.id)
 
         files = get_diff_files(diffset, None, interdiffset,
-                               highlighting, False)
+                               highlighting, checking, False)
 
         # Break the list of files into pages
         siteconfig = SiteConfiguration.objects.get_current()
@@ -145,10 +147,12 @@ def view_diff(request, diffset, interdiffset=None, extra_context={},
 
             if filediff.diffset == interdiffset:
                 temp_files = get_diff_files(interdiffset, filediff,
-                                            None, highlighting, True)
+                                            None, highlighting,
+                                            checking, True)
             else:
                 temp_files = get_diff_files(diffset, filediff,
-                                            interdiffset, highlighting, True)
+                                            interdiffset, highlighting,
+                                            checking, True)
 
             if temp_files:
                 file_temp = temp_files[0]
@@ -190,7 +194,7 @@ def view_diff_fragment(
 
     def get_requested_diff_file(get_chunks=True):
         files = get_diff_files(diffset, filediff, interdiffset, highlighting,
-                               get_chunks)
+                               checking, get_chunks)
 
         if files:
             assert len(files) == 1
@@ -207,6 +211,7 @@ def view_diff_fragment(
     filediff = get_object_or_404(FileDiff, pk=filediff_id, diffset=diffset)
     interdiffset = get_object_or_none(DiffSet, pk=interdiffset_id)
     highlighting = get_enable_highlighting(request.user)
+    checking = get_enable_spell_checking(request.user)
 
     if chunkindex:
         collapseall = False

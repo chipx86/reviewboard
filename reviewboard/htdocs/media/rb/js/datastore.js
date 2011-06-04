@@ -2001,6 +2001,38 @@ $.extend(RB.ScreenshotCommentReply.prototype, {
 });
 
 
+RB.SpellCheck = function() {}
+
+$.extend(RB.SpellCheck.prototype, {
+    getSuggestion: function(word) {
+        rbApiCall({
+            type: 'GET',
+            url: SITE_ROOT + "api/dictionary?word=" + word,
+            success: function(rsp, status){
+                alert(rsp.dictionary.suggest);
+            }
+        });
+    },
+
+    addToDict: function(word) {
+        rbApiCall({
+            type: 'POST',
+            url: SITE_ROOT + "api/dictionary/",
+            data: 'word=' + word.textContent,
+            success: this._changeStyle(word)
+        });
+    },
+
+    ignoreOnce: function(word) {
+        this._changeStyle(word);
+    },
+
+    _changeStyle: function(word) {
+        $(word).removeClass();
+    }
+});
+
+
 /*
  * Convenience wrapper for Review Board API functions. This will handle
  * any button disabling/enabling, write to the correct path prefix, form

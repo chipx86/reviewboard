@@ -37,8 +37,15 @@ from djblets.log import restart_logging
 from djblets.siteconfig.forms import SiteSettingsForm
 import pytz
 
+try:
+    from enchant import list_languages
+    has_spell_checking = True
+except ImportError:
+    has_spell_checking = False
+
 from reviewboard.accounts.forms import LegacyAuthModuleSettingsForm
 from reviewboard.admin.checks import get_can_enable_search, \
+                                     get_can_enable_spell_checking, \
                                      get_can_enable_syntax_highlighting, \
                                      get_can_use_amazon_s3, \
                                      get_can_use_couchdb
@@ -344,6 +351,11 @@ class EMailSettingsForm(SiteSettingsForm):
 
 class DiffSettingsForm(SiteSettingsForm):
     """Diff settings for Review Board."""
+    if has_spell_checking:
+        LANGUAGE_CHOICES = ((lang, lang) for lang in list_languages())
+    else:
+        LANGUAGE_CHOICES = ()
+
     diffviewer_syntax_highlighting = forms.BooleanField(
         label=_("Show syntax highlighting"),
         required=False)
@@ -352,6 +364,22 @@ class DiffSettingsForm(SiteSettingsForm):
         label=_("Syntax highlighting threshold"),
         help_text=_("Files with lines greater than this number will not have "
                     "syntax highlighting.  Enter 0 for no limit."),
+        required=False)
+
+    diffviewer_spell_checking = forms.BooleanField(
+        label=_("Show spell errors"),
+        required=False)
+
+    diffviewer_spell_checking_language = forms.CharField(
+        label=_("Spell checking language"),
+        help_text=_("Choose the language for spell checking."),
+        required=False,
+        widget=forms.Select(choices=LANGUAGE_CHOICES))
+
+    diffviewer_spell_checking_dir = forms.CharField(
+        label=_("Personal wordlist path"),
+        help_text=_("The path of the personal wordlist for spell checking. "
+                    "This must be writable by the web server."),
         required=False)
 
     diffviewer_show_trailing_whitespace = forms.BooleanField(
@@ -386,10 +414,28 @@ class DiffSettingsForm(SiteSettingsForm):
                     "page to the diff viewer."),
         initial=10)
 
+    def clean_diffviewer_spell_checking_dir(self):
+        """Validates that the diffviewer_spell_checking_dir path is valid."""
+        diffviewer_spell_checking_dir = \
+            self.cleaned_data['diffviewer_spell_checking_dir']
+
+        if not os.path.exists(diffviewer_spell_checking_dir):
+            raise forms.ValidationError(_("This path does not exist."))
+
+        if not os.path.isfile(diffviewer_spell_checking_dir):
+            raise forms.ValidationError(_("This is not a file."))
+
+        if not os.access(diffviewer_spell_checking_dir, os.W_OK):
+            raise forms.ValidationError(
+                _("This path is not writable by the web server."))
+
+        return diffviewer_spell_checking_dir
+
     def load(self):
         # TODO: Move this check into a dependencies module so we can catch it
         #       when the user starts up Review Board.
         can_syntax_highlight, reason = get_can_enable_syntax_highlighting()
+        can_spell_check, reason = get_can_enable_spell_checking()
 
         if not can_syntax_highlight:
             self.disabled_fields['diffviewer_syntax_highlighting'] = True
@@ -397,8 +443,19 @@ class DiffSettingsForm(SiteSettingsForm):
             self.disabled_fields['diffviewer_syntax_highlighting_threshold'] = True
             self.disabled_reasons['diffviewer_syntax_highlighting_threshold'] = _(reason)
 
+        if not can_spell_check:
+            self.disabled_fields['diffviewer_spell_checking'] = True
+            self.disabled_reasons['diffviewer_spell_checking'] = _(reason)
+            self.disabled_fields['diffviewer_spell_checking_language'] = True
+            self.disabled_reasons['diffviewer_spell_checking_language'] = _(reason)
+            self.disabled_fields['diffviewer_spell_checking_dir'] = True
+            self.disabled_reasons['diffviewer_spell_checking_dir'] = _(reason)
+
         self.fields['include_space_patterns'].initial = \
             ', '.join(self.siteconfig.get('diffviewer_include_space_patterns'))
+
+        self.fields['diffviewer_spell_checking_dir'].initial = \
+            self.siteconfig.get('diffviewer_spell_checking_dir')
 
         super(DiffSettingsForm, self).load()
 
@@ -407,6 +464,8 @@ class DiffSettingsForm(SiteSettingsForm):
             re.split(r",\s*", self.cleaned_data['include_space_patterns']))
 
         super(DiffSettingsForm, self).save()
+
+        load_site_config()
 
 
     class Meta:
@@ -418,6 +477,9 @@ class DiffSettingsForm(SiteSettingsForm):
                 'classes': ('wide',),
                 'fields': ('diffviewer_syntax_highlighting',
                            'diffviewer_syntax_highlighting_threshold',
+                           'diffviewer_spell_checking',
+                           'diffviewer_spell_checking_language',
+                           'diffviewer_spell_checking_dir',
                            'diffviewer_show_trailing_whitespace',
                            'include_space_patterns'),
             },

@@ -21,6 +21,8 @@ class PreferencesForm(forms.Form):
                                        required=False)
     syntax_highlighting = forms.BooleanField(required=False,
         label=_("Enable syntax highlighting in the diff viewer"))
+    spell_checking = forms.BooleanField(required=False,
+        label=_("Enable spell checking in the diff viewer"))
     first_name = forms.CharField(required=False)
     last_name = forms.CharField(required=False)
     email = forms.EmailField()
@@ -73,6 +75,7 @@ class PreferencesForm(forms.Form):
         profile = user.get_profile()
         profile.first_time_setup_done = True
         profile.syntax_highlighting = self.cleaned_data['syntax_highlighting']
+        profile.spell_checking = self.cleaned_data['spell_checking']
         profile.save()
 
     def clean_password2(self):

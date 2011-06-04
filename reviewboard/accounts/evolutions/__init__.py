@@ -1,0 +1,3 @@
+SEQUENCE = [
+    'spell_checking',
+]

@@ -109,6 +109,7 @@ def check_dependencies():
         dependency_warning('bzrlib not found.  Bazaar integration will not work.')
 
     for check_func in (checks.get_can_enable_search,
+                       checks.get_can_enable_spell_checking,
                        checks.get_can_enable_syntax_highlighting):
         success, reason = check_func()
 

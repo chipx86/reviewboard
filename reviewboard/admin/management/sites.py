@@ -70,6 +70,7 @@ migration_table = {
     'diffviewer_paginate_by':            'DIFFVIEWER_PAGINATE_BY',
     'diffviewer_paginate_orphans':       'DIFFVIEWER_PAGINATE_ORPHANS',
     'diffviewer_syntax_highlighting':    'DIFF_SYNTAX_HIGHLIGHTING',
+    'diffviewer_spell_checking':         'DIFF_SPELL_CHECKING',
     'mail_send_review_mail':             'SEND_REVIEW_MAIL',
     'search_enable':                     'ENABLE_SEARCH',
     'search_index_file':                 'SEARCH_INDEX',

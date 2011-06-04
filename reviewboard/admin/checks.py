@@ -35,6 +35,7 @@ import sys
 from django.conf import settings
 from django.utils.translation import gettext as _
 from djblets.util.filesystem import is_exe_in_path
+from pkg_resources import parse_version
 
 
 _updates_required = []
@@ -159,6 +160,30 @@ def get_can_enable_syntax_highlighting():
             'Syntax highlighting requires the <a href="%(url)s">Pygments</a> '
             'library, which is not installed.'
         ) % {'url': "http://www.pygments.org/"})
+
+
+def get_can_enable_spell_checking():
+    """Checks whether spell checking can be enabled."""
+    required_version = "1.6.5"
+
+    try:
+        import enchant
+
+        if (parse_version(enchant.__version__) >=
+            parse_version(required_version)):
+            return (True, None)
+        else:
+            return (False, _(
+                'PyEnchant %(cur_version)s is installed, but '
+                '%(required_version)s or higher is required '
+                'to use spell checking.'
+            ) % {'cur_version': enchant.__version__,
+                 'required_version': required_version})
+    except ImportError:
+        return (False, _(
+            'Spell checking requires the <a href="%(url)s">PyEnchant</a> '
+            'library, which is not installed.'
+        ) % {'url': "http://www.rfk.id.au/software/pyenchant/"})
 
 
 def get_can_enable_ldap():

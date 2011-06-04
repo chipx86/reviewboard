@@ -42,6 +42,7 @@ from djblets.siteconfig.models import SiteConfiguration
 
 from reviewboard.accounts.backends import get_registered_auth_backends
 from reviewboard.admin.checks import get_can_enable_search, \
+                                     get_can_enable_spell_checking, \
                                      get_can_enable_syntax_highlighting
 
 
@@ -119,6 +120,8 @@ defaults.update({
     'diffviewer_paginate_orphans':         10,
     'diffviewer_syntax_highlighting':      True,
     'diffviewer_syntax_highlighting_threshold': 0,
+    'diffviewer_spell_checking':           True,
+    'diffviewer_spell_checking_language':  'en_US',
     'diffviewer_show_trailing_whitespace': True,
     'mail_send_review_mail':               False,
     'mail_send_new_user_mail':             False,
@@ -203,6 +206,9 @@ def load_site_config():
 
     if not get_can_enable_syntax_highlighting()[0]:
         siteconfig.set('diffviewer_syntax_highlighting', False)
+
+    if not get_can_enable_spell_checking()[0]:
+        siteconfig.set('diffviewer_spell_checking', False)
 
 
     # Site administrator settings

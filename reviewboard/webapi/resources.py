@@ -34,6 +34,7 @@ from reviewboard import get_version_string, get_package_version, is_release
 from reviewboard.accounts.models import Profile
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_diff_files
+from reviewboard.diffviewer.filters import spell_checker
 from reviewboard.diffviewer.forms import EmptyDiffError
 from reviewboard.attachments.forms import UploadFileForm
 from reviewboard.attachments.models import FileAttachment
@@ -6026,6 +6027,77 @@ class SessionResource(WebAPIResource):
 session_resource = SessionResource()
 
 
+class DictionaryResource(WebAPIResource):
+    """Provide information and functions about spell checking on words."""
+    name = 'dictionary'
+    singleton = True
+
+    allowed_methods = ('GET', 'POST')
+
+    @webapi_check_local_site
+    @webapi_check_login_required
+    @webapi_request_fields(
+        required = {
+            'word': {
+                'type': str,
+                'description': 'The word to check in the spelling dictionary.',
+            },
+        },
+    )
+    def get(self, request, word, *args, **kwargs):
+        """Returns information on a word.
+
+        This includes whether or not the word is correctly spelled,
+        and any spelling suggestions.
+        """
+        correct = True
+        suggest = []
+
+        if word:
+            correct = spell_checker.check(word)
+            if not correct:
+                suggest = spell_checker.suggest(word)
+
+        data = {
+            'word': word,
+            'correct': correct,
+            'suggest': suggest,
+        }
+
+        return 200, {
+            self.name: data,
+        }
+
+    @webapi_check_local_site
+    @webapi_login_required
+    @webapi_response_errors(NOT_LOGGED_IN, PERMISSION_DENIED)
+    @webapi_request_fields(
+        required = {
+            'word': {
+                'type': str,
+                'description': 'The word to add to the dictionary.',
+            },
+        },
+    )
+    def create(self, request, word, *args, **kwargs):
+        """Adds a word to the dictionary.
+
+        If the word is already added, this will return :http:`304`.
+        """
+        spell_checker.add(word)
+
+        if spell_checker.check(word):
+            status_code = 200
+        else:
+            status_code = 304
+
+        return status_code, {
+            self.name: word,
+        }
+
+dictionary_resource = DictionaryResource()
+
+
 class RootResource(DjbletsRootResource):
     """Links to all the main resources, including URI templates to resources
     anywhere in the tree.
@@ -6037,6 +6109,7 @@ class RootResource(DjbletsRootResource):
     """
     def __init__(self, *args, **kwargs):
         super(RootResource, self).__init__([
+            dictionary_resource,
             repository_resource,
             review_group_resource,
             review_request_resource,

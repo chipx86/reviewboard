@@ -58,6 +58,10 @@ class Profile(models.Model):
         verbose_name=_("syntax highlighting"),
         help_text=_("Indicates whether the user wishes to see "
                     "syntax highlighting in the diffs."))
+    spell_checking = models.BooleanField(default=True,
+        verbose_name=_("spell checking"),
+        help_text=_("Indicates whether the user wishes to have "
+                    "spell checking in the diffs."))
 
     # Indicate whether submitted review requests should appear in the
     # review request lists (excluding the dashboard).

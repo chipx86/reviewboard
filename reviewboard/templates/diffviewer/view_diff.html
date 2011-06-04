@@ -30,6 +30,7 @@
 {% endblock %}
 
 {% block scripts-post %}
+<script type="text/javascript" src="{{MEDIA_URL}}rb/js/jquery.contextmenu.r2.js"></script>
 <script type="text/javascript" src="{{MEDIA_URL}}rb/js/diffviewer.js?{{MEDIA_SERIAL}}"></script>
 <script type="text/javascript" src="{{MEDIA_URL}}rb/js/reviews.js?{{MEDIA_SERIAL}}"></script>
 <script type="text/javascript" src="{{MEDIA_URL}}rb/js/jquery.form.js?{{MEDIA_SERIAL}}"></script>
@@ -45,6 +46,12 @@
 {% endblock %}
 
 {% block content %}
+<div class="contextMenu" id="spellcheckMenu">
+ <ul>
+  <li id="spellcheck_ignore">{% trans "Ignore Once" %}</li>
+  <li id="spellcheck_add">{% trans "Add to Dictionary" %}</li>
+ </ul>
+</div>
 {% if error %}
 {%  errorbox %}
 <p>{{error}}</p>
