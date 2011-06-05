@@ -32,9 +32,9 @@ from djblets.webapi.resources import WebAPIResource as DjbletsWebAPIResource, \
 
 from reviewboard import get_version_string, get_package_version, is_release
 from reviewboard.accounts.models import Profile
+from reviewboard.admin.checks import get_can_enable_spell_checking
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_diff_files
-from reviewboard.diffviewer.filters import spell_checker
 from reviewboard.diffviewer.forms import EmptyDiffError
 from reviewboard.attachments.forms import UploadFileForm
 from reviewboard.attachments.models import FileAttachment
@@ -76,6 +76,9 @@ from reviewboard.webapi.errors import BAD_HOST_KEY, \
                                       SERVER_CONFIG_ERROR, \
                                       UNVERIFIED_HOST_CERT, \
                                       UNVERIFIED_HOST_KEY
+
+if get_can_enable_spell_checking()[0]:
+    from reviewboard.diffviewer.filters import spell_checker
 
 
 CUSTOM_MIMETYPE_BASE = 'application/vnd.reviewboard.org'
@@ -6108,8 +6111,7 @@ class RootResource(DjbletsRootResource):
     the resource URI scheme.
     """
     def __init__(self, *args, **kwargs):
-        super(RootResource, self).__init__([
-            dictionary_resource,
+        resources = [
             repository_resource,
             review_group_resource,
             review_request_resource,
@@ -6117,7 +6119,12 @@ class RootResource(DjbletsRootResource):
             server_info_resource,
             session_resource,
             user_resource,
-        ], *args, **kwargs)
+        ]
+
+        if get_can_enable_spell_checking()[0]:
+            resources.append(dictionary_resource)
+
+        super(RootResource, self).__init__(resources, *args, **kwargs)
 
     @webapi_check_local_site
     @augment_method_from(DjbletsRootResource)

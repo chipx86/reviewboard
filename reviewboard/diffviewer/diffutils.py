@@ -13,16 +13,20 @@ try:
 except ImportError:
     pass
 
+try:
+    from enchant import DictWithPWL
+    from enchant.tokenize import get_tokenizer, HTMLChunker
+    has_enchant = True
+except ImportError:
+    has_enchant = False
+
 from django.utils.html import escape
 from django.utils.http import urlquote
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext as _
-
 from djblets.log import log_timed
 from djblets.siteconfig.models import SiteConfiguration
 from djblets.util.misc import cache_memoize
-from enchant import DictWithPWL
-from enchant.tokenize import get_tokenizer, HTMLChunker
 
 from reviewboard.accounts.models import Profile
 from reviewboard.admin.checks import get_can_enable_spell_checking, \
@@ -678,7 +682,7 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
             "Generating diff chunks for filediff id %s (%s)" %
             (filediff.id, filediff.source_file))
 
-    if enable_spell_checking:
+    if enable_spell_checking and has_enchant:
         spell_check_lang = siteconfig.get('diffviewer_spell_checking_language')
         spell_check_dict_dir = siteconfig.get('diffviewer_spell_checking_dir')
         spell_check_dict = DictWithPWL(spell_check_lang, spell_check_dict_dir)
