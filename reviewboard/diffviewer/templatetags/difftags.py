@@ -41,12 +41,13 @@ def interdiff_link_list(history, current_pair):
 
 
 @register.filter
-def highlightregion(value, regions):
+def highlightregion(value, regions, class_name='hl'):
     """
     Highlights the specified regions of text.
 
     This is used to insert ``<span class="hl">...</span>`` tags in the
-    text as specified by the ``regions`` variable.
+    text as specified by the ``regions`` variable. The actual class name
+    in the span tag can be changed.
     """
     if not regions:
         return value
@@ -85,7 +86,7 @@ def highlightregion(value, regions):
             j += 1
         elif not in_tag and not in_entity:
             if not in_hl and region[0] <= j < region[1]:
-                s += '<span class="hl">'
+                s += '<span class="%s">' % class_name
                 in_hl = True
 
             if value[i] == '&':

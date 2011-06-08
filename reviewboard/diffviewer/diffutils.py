@@ -48,8 +48,15 @@ ALPHANUM_RE = re.compile(r'\w')
 WHITESPACE_RE = re.compile(r'\s')
 
 SPELL_CHECKED_SPANS_RE = re.compile('<span class="[sc]">[^<]*</span>')
-SPELL_ERR_START_SPAN = '<span class="speller">'
-SPELL_ERR_END_SPAN = '</span>'
+
+# A list of file extensions we exclude from spell checking.
+# In the future, we may want to make this configurable.
+SPELL_CHECKED_EXCLUSIONS = set([
+    '.xml',
+    '.svg',
+    '.html',
+    '.sgml',
+])
 
 # A list of regular expressions for headers in the source code that we can
 # display in collapsed regions of diffs and diff fragments in reviews.
@@ -521,7 +528,7 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
 
         return pygments.highlight(data, lexer, NoWrapperHtmlFormatter()).splitlines()
 
-    def spell_check_lines(lines, spell_dict, tokenizer):
+    def spell_check_lines(lines, newlines, spell_dict, tokenizer):
         """Check for spell errors with marked lines.
 
         For spell errrors in strings and comments, this can change
@@ -532,26 +539,23 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
             last = 0
             new_mark = ""
 
-            for m in SPELL_CHECKED_SPANS_RE.finditer(line[5]):
+            for m in SPELL_CHECKED_SPANS_RE.finditer(newlines[line[4]]):
                 offset = 0
                 check = m.group()
                 begin = m.start()
 
+                regions = []
+
                 for word, pos in tokenizer(check):
                     if not spell_dict.check(word):
+                        print "****** %s" % check
                         i = offset + pos
-                        check = check[:i] + SPELL_ERR_START_SPAN + check[i:]
-                        offset += len(SPELL_ERR_START_SPAN)
+                        regions.push_back((i, i + len(word)))
+                        offset = i + len(word)
 
-                        i = offset + pos + len(wird)
-                        check = check[:i] + SPELL_ERR_END_SPAN + check[i:]
-                        offset += len(SPELL_ERR_END_SPAN)
-
-                new_mark += line[5][last:begin] + check
-                last = m.end()
-
-            if new_mark:
-                line[5] = mark_safe(new_mark)
+                if regions:
+                    line[5] = highlightregion(lines[line[5]], region,
+                                              'spellerr')
 
         return lines
 
@@ -687,6 +691,8 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
         spell_check_dict_dir = siteconfig.get('diffviewer_spell_checking_dir')
         spell_check_dict = DictWithPWL(spell_check_lang, spell_check_dict_dir)
         spell_check_tokenizer = get_tokenizer(spell_check_lang, (HTMLChunker,))
+        spell_check_file = (os.path.splitext(filediff.source_file)[1]
+                            not in SPELL_CHECKED_EXCLUSIONS)
 
     for tag, i1, i2, j1, j2, meta in opcodes_with_metadata(differ):
         oldlines = markup_a[i1:i2]
@@ -714,8 +720,10 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
                                     last_range_start, True)
                     yield new_chunk(lines, last_range_start, numlines)
         else:
-            if enable_spell_checking and tag in ['insert', 'replace', 'delete']:
-                lines = spell_check_lines(lines, spell_check_dict,
+            if (enable_spell_checking and
+                spell_check_file and
+                tag in ['insert', 'replace', 'delete']):
+                lines = spell_check_lines(lines, b, spell_check_dict,
                                           spell_check_tokenizer)
 
             yield new_chunk(lines, 0, numlines, False, tag, meta)
