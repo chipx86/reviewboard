@@ -1,4 +1,5 @@
 import fnmatch
+import htmlentitydefs
 import os
 import re
 import subprocess
@@ -13,13 +14,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from enchant import DictWithPWL
-    from enchant.tokenize import get_tokenizer, HTMLChunker
-    has_enchant = True
-except ImportError:
-    has_enchant = False
-
 from django.utils.html import escape
 from django.utils.http import urlquote
 from django.utils.safestring import mark_safe
@@ -33,6 +27,7 @@ from reviewboard.admin.checks import get_can_enable_spell_checking, \
                                      get_can_enable_syntax_highlighting
 from reviewboard.diffviewer.myersdiff import MyersDiffer
 from reviewboard.diffviewer.smdiff import SMDiffer
+from reviewboard.diffviewer.spellchecker import SpellChecker
 from reviewboard.scmtools.core import PRE_CREATION, HEAD
 
 
@@ -46,17 +41,6 @@ NEWLINE_CONVERSION_RE = re.compile(r'\r(\r?\n)?')
 
 ALPHANUM_RE = re.compile(r'\w')
 WHITESPACE_RE = re.compile(r'\s')
-
-SPELL_CHECKED_SPANS_RE = re.compile('<span class="[sc]">[^<]*</span>')
-
-# A list of file extensions we exclude from spell checking.
-# In the future, we may want to make this configurable.
-SPELL_CHECKED_EXCLUSIONS = set([
-    '.xml',
-    '.svg',
-    '.html',
-    '.sgml',
-])
 
 # A list of regular expressions for headers in the source code that we can
 # display in collapsed regions of diffs and diff fragments in reviews.
@@ -528,37 +512,6 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
 
         return pygments.highlight(data, lexer, NoWrapperHtmlFormatter()).splitlines()
 
-    def spell_check_lines(lines, newlines, spell_dict, tokenizer):
-        """Check for spell errors with marked lines.
-
-        For spell errrors in strings and comments, this can change
-        their classname to ``spellerr''
-        """
-        for line in lines:
-            begin = 0
-            last = 0
-            new_mark = ""
-
-            for m in SPELL_CHECKED_SPANS_RE.finditer(newlines[line[4]]):
-                offset = 0
-                check = m.group()
-                begin = m.start()
-
-                regions = []
-
-                for word, pos in tokenizer(check):
-                    if not spell_dict.check(word):
-                        print "****** %s" % check
-                        i = offset + pos
-                        regions.push_back((i, i + len(word)))
-                        offset = i + len(word)
-
-                if regions:
-                    line[5] = highlightregion(lines[line[5]], region,
-                                              'spellerr')
-
-        return lines
-
     # There are three ways this function is called:
     #
     #     1) filediff, no interfilediff
@@ -686,13 +639,9 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
             "Generating diff chunks for filediff id %s (%s)" %
             (filediff.id, filediff.source_file))
 
-    if enable_spell_checking and has_enchant:
-        spell_check_lang = siteconfig.get('diffviewer_spell_checking_language')
-        spell_check_dict_dir = siteconfig.get('diffviewer_spell_checking_dir')
-        spell_check_dict = DictWithPWL(spell_check_lang, spell_check_dict_dir)
-        spell_check_tokenizer = get_tokenizer(spell_check_lang, (HTMLChunker,))
-        spell_check_file = (os.path.splitext(filediff.source_file)[1]
-                            not in SPELL_CHECKED_EXCLUSIONS)
+    spell_checker = SpellChecker()
+    spell_check_file = (enable_spell_checking and
+                        spell_checker.can_check(filediff.source_file))
 
     for tag, i1, i2, j1, j2, meta in opcodes_with_metadata(differ):
         oldlines = markup_a[i1:i2]
@@ -720,11 +669,10 @@ def get_chunks(diffset, filediff, interfilediff, force_interdiff,
                                     last_range_start, True)
                     yield new_chunk(lines, last_range_start, numlines)
         else:
-            if (enable_spell_checking and
-                spell_check_file and
-                tag in ['insert', 'replace', 'delete']):
-                lines = spell_check_lines(lines, b, spell_check_dict,
-                                          spell_check_tokenizer)
+            if spell_check_file and tag in ('insert', 'replace'):
+                for i, line in enumerate(spell_checker.check_lines(
+                                             [line[5] for line in lines])):
+                    lines[i][5] = mark_safe(line)
 
             yield new_chunk(lines, 0, numlines, False, tag, meta)
 
