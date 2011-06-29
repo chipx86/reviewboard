@@ -278,7 +278,7 @@ $.fn.searchAutoComplete = function() {
             selectFirst: false,
             width: 240,
             parse: function(data) {
-                var jsonData = JSON.parse(data);
+                var jsonData = $.parseJSON(data);
                 var jsonDataSearch = jsonData.search;
                 var parsed = [];
                 var objects = ["users", "groups", "review_requests"];

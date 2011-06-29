@@ -1,5 +1,221 @@
 RB = {};
 
+
+/*
+ * Convenience wrapper for Review Board API functions. This will handle
+ * any button disabling/enabling, write to the correct path prefix, form
+ * uploading, and displaying server errors.
+ *
+ * options has the following fields:
+ *
+ *    buttons  - An optional list of buttons to disable/enable.
+ *    form     - A form to upload, if any.
+ *    type     - The request type (defaults to "POST").
+ *    prefix   - The prefix to put on the API path (after SITE_ROOT, before
+ *               "api")
+ *    path     - The relative path to the Review Board API tree.
+ *    data     - Data to send with the request.
+ *    success  - An optional success callback. The default one will reload
+ *               the page.
+ *    error    - An optional error callback, called after the error banner
+ *               is displayed.
+ *    complete - An optional complete callback, called after the success or
+ *               error callbacks.
+ *
+ * @param {object} options  The options, listed above.
+ */
+function rbApiCall(options) {
+    var prefix = options.prefix || "";
+    var url = options.url || (SITE_ROOT + prefix + "api" + options.path);
+
+    function doCall() {
+        if (options.buttons) {
+            options.buttons.attr("disabled", true);
+        }
+
+        var activityIndicator = $("#activity-indicator");
+
+        if (!options.noActivityIndicator) {
+            activityIndicator
+                .removeClass("error")
+                .text((options.type || options.type === "GET")
+                      ? "Loading..." : "Saving...")
+                .show();
+        }
+
+        var data = $.extend(true, {
+            url: url,
+            data: options.data,
+            dataType: options.dataType || "json",
+            error: function(xhr, textStatus, errorThrown) {
+                var rsp = null;
+
+                try {
+                    rsp = $.httpData(xhr, options.dataType || "json");
+                } catch (e) {
+                }
+
+                if ((rsp && rsp.stat) || xhr.status === 204) {
+                    if ($.isFunction(options.success)) {
+                        options.success(rsp, xhr.status);
+                    }
+
+                    return;
+                }
+
+                var responseText = xhr.responseText;
+                activityIndicator
+                    .addClass("error")
+                    .text("A server error occurred.")
+                    .append(
+                        $("<a/>")
+                            .text("Show Details")
+                            .attr("href", "#")
+                            .click(function() {
+                                showErrorPage(xhr, responseText);
+                            })
+                    )
+                    .append(
+                        $("<a/>")
+                            .text("Dismiss")
+                            .attr("href", "#")
+                            .click(function() {
+                                activityIndicator.fadeOut("fast");
+                                return false;
+                            })
+                    );
+
+                if ($.isFunction(options.error)) {
+                    options.error(xhr, textStatus, errorThrown);
+                }
+            }
+        }, options);
+
+        data.complete = function(xhr, status) {
+            if (options.buttons) {
+                options.buttons.attr("disabled", false);
+            }
+
+            if (!options.noActivityIndicator &&
+                !activityIndicator.hasClass("error")) {
+                activityIndicator
+                    .delay(1000)
+                    .fadeOut("fast");
+            }
+
+            if ($.isFunction(options.complete)) {
+                options.complete(xhr, status);
+            }
+
+            $.funcQueue("rbapicall").next();
+        };
+
+        if (!data.data || typeof data.data === "object") {
+            data.data = $.extend({
+                api_format: 'json'
+            }, data.data || {});
+        }
+
+        if (options.form) {
+            options.form.ajaxSubmit(data);
+        } else {
+            $.ajax(data);
+        }
+    }
+
+    function showErrorPage(xhr, data) {
+        var iframe = $('<iframe/>')
+            .width("100%");
+
+        var requestData = "(none)";
+
+        if (options.data) {
+            requestData = $.param(options.data);
+        }
+
+        var errorBox = $('<div class="server-error-box"/>')
+            .appendTo("body")
+            .append('<p><b>Error Code:</b> ' + xhr.status + '</p>')
+            .append('<p><b>Error Text:</b> ' + xhr.statusText + '</p>')
+            .append('<p><b>Request URL:</b> ' + url + '</p>')
+            .append('<p><b>Request Data:</b> ' + requestData + '</p>')
+            .append('<p class="response-data"><b>Response Data:</b></p>')
+            .append(
+                '<p>There may be useful error details below. The following ' +
+                'error page may be useful to your system administrator or ' +
+                'when <a href="http://www.reviewboard.org/bugs/new/">' +
+                'reporting a bug</a>. To save the page, right-click the ' +
+                'error below and choose "Save Page As," if available, ' +
+                'or "View Source" and save the result as a ' +
+                '<tt>.html</tt> file.</p>')
+            .append('<p><b>Warning:</b> Be sure to remove any sensitive ' +
+                    'material that may exist in the error page before ' +
+                    'reporting a bug!</p>')
+            .append(iframe)
+            .bind("resize", function() {
+                iframe.height($(this).height() - iframe.position().top);
+            })
+            .modalBox({
+                stretchX: true,
+                stretchY: true,
+                title: "Server Error Details"
+            });
+
+        var doc = iframe[0].contentDocument ||
+                  iframe[0].contentWindow.document;
+        doc.open();
+        doc.write(data);
+        doc.close();
+    }
+
+    options.type = options.type || "POST";
+
+    if (options.type !== "GET") {
+        $.funcQueue("rbapicall").add(doCall);
+        $.funcQueue("rbapicall").start();
+    } else {
+        doCall();
+    }
+}
+
+
+function sendFileBlob(file, save_func, obj, options) {
+    var reader = new FileReader();
+
+    reader.onloadend = function() {
+        var boundary = "-----multipartformboundary" + new Date().getTime();
+        var blob = "";
+        blob += "--" + boundary + "\r\n";
+        blob += 'Content-Disposition: form-data; name="path"; ' +
+                'filename="' + file.name + '"\r\n';
+        blob += 'Content-Type: application/octet-stream\r\n';
+        blob += '\r\n';
+        blob += reader.result;
+        blob += '\r\n';
+        blob += "--" + boundary + "--\r\n";
+        blob += '\r\n';
+
+        save_func.call(obj, options.success, options.error, {
+            buttons: options.buttons,
+            data: blob,
+            processData: false,
+            contentType: "multipart/form-data; boundary=" + boundary,
+            xhr: function() {
+                var xhr = $.ajaxSettings.xhr();
+
+                xhr.send = function(data) {
+                    xhr.sendAsBinary(data);
+                };
+
+                return xhr;
+            }
+        });
+    };
+
+    reader.readAsBinaryString(file);
+}
+
+
 RB.DiffComment = function(review, id, filediff, interfilediff, beginLineNum,
                           endLineNum) {
     this.id = id;
@@ -15,7 +231,7 @@ RB.DiffComment = function(review, id, filediff, interfilediff, beginLineNum,
     this.url = null;
 
     return this;
-}
+};
 
 $.extend(RB.DiffComment.prototype, {
     ready: function(on_ready) {
@@ -66,8 +282,10 @@ $.extend(RB.DiffComment.prototype, {
                 if (self.loaded) {
                     type = "PUT";
                     url = self.url;
-                    if (self.review.public)
+
+                    if (self.review.is_public) {
                         data.issue_status = self.issue_status;
+                    }
                 } else {
                     data.filediff_id = self.filediff.id;
                     url = self.review.links.diff_comments.href;
@@ -118,7 +336,7 @@ $.extend(RB.DiffComment.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text == "") {
+        if (this.text === "") {
             this.deleteComment();
         }
     },
@@ -145,7 +363,7 @@ $.extend(RB.DiffComment.prototype, {
                 type: "GET",
                 url: self.review.links.diff_comments.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -178,7 +396,7 @@ RB.DiffCommentReply = function(reply, id, reply_to_id) {
     this.url = null;
 
     return this;
-}
+};
 
 $.extend(RB.DiffCommentReply.prototype, {
     ready: function(on_ready) {
@@ -263,7 +481,7 @@ $.extend(RB.DiffCommentReply.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text != "") {
+        if (this.text !== "") {
             return;
         }
 
@@ -292,7 +510,7 @@ $.extend(RB.DiffCommentReply.prototype, {
                 type: "GET",
                 url: self.reply.links.diff_comments.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -318,14 +536,14 @@ RB.Diff = function(review_request, revision, interdiff_revision) {
     this.interdiff_revision = interdiff_revision;
 
     return this;
-}
+};
 
 $.extend(RB.Diff.prototype, {
     getDiffFragment: function(review_base_url, fileid, filediff_id, revision,
                               interdiff_revision, chunk_index, onSuccess) {
         var revisionStr = revision;
 
-        if (interdiff_revision != null) {
+        if (interdiff_revision) {
             revisionStr += "-" + interdiff_revision;
         }
 
@@ -336,7 +554,7 @@ $.extend(RB.Diff.prototype, {
             type: "GET",
             dataType: "html",
             complete: function(res, status) {
-                if (status == "success") {
+                if (status === "success") {
                     onSuccess(res.responseText);
                 }
             }
@@ -361,7 +579,7 @@ $.extend(RB.Diff.prototype, {
     },
 
     getErrorString: function(rsp) {
-        if (rsp.err.code == 207) {
+        if (rsp.err.code === 207) {
             return 'The file "' + rsp.file + '" (revision ' + rsp.revision +
                     ') was not found in the repository';
         }
@@ -381,7 +599,7 @@ $.extend(RB.Diff.prototype, {
             error: function() {}
         }, options);
 
-        if (self.id != undefined) {
+        if (self.id) {
             options.error("The diff " + self.id + " was already created. " +
                           "This is a script error. Please report it.");
             return;
@@ -399,7 +617,7 @@ $.extend(RB.Diff.prototype, {
                 form: self.form,
                 buttons: options.buttons,
                 success: function(rsp) {
-                    if (rsp.stat == "ok") {
+                    if (rsp.stat === "ok") {
                         options.success(rsp);
                     } else {
                         options.error(rsp, rsp.err.msg);
@@ -421,7 +639,7 @@ RB.ReviewRequest = function(id, prefix, path) {
     this.loaded = false;
 
     return this;
-}
+};
 
 $.extend(RB.ReviewRequest, {
     /* Constants */
@@ -437,8 +655,8 @@ $.extend(RB.ReviewRequest.prototype, {
     },
 
     createReview: function(review_id) {
-        if (review_id == undefined) {
-            if (this.draft_review == null) {
+        if (review_id === undefined) {
+            if (this.draft_review === null) {
                 this.draft_review = new RB.Review(this);
             }
 
@@ -486,8 +704,8 @@ $.extend(RB.ReviewRequest.prototype, {
         data = {};
         data[options.field] = options.value;
 
-        if (options.field == "target_people" ||
-            options.field == "target_groups") {
+        if (options.field === "target_people" ||
+            options.field === "target_groups") {
             data.expand = options.field;
         }
 
@@ -507,7 +725,7 @@ $.extend(RB.ReviewRequest.prototype, {
 
         if (starred) {
             apiType = "POST";
-            data['object_id'] = this.id;
+            data.object_id = this.id;
         } else {
             apiType = "DELETE";
             path += this.id + "/";
@@ -531,7 +749,7 @@ $.extend(RB.ReviewRequest.prototype, {
                 type: "PUT",
                 url: self.links.draft.href,
                 data: {
-                    public: 1
+                    'public': 1
                 },
                 buttons: options.buttons
             });
@@ -554,9 +772,9 @@ $.extend(RB.ReviewRequest.prototype, {
         var self = this;
         var statusType;
 
-        if (options.type == RB.ReviewRequest.CLOSE_DISCARDED) {
+        if (options.type === RB.ReviewRequest.CLOSE_DISCARDED) {
             statusType = "discarded";
-        } else if (options.type == RB.ReviewRequest.CLOSE_SUBMITTED) {
+        } else if (options.type === RB.ReviewRequest.CLOSE_SUBMITTED) {
             statusType = "submitted";
         } else {
             return;
@@ -619,9 +837,9 @@ $.extend(RB.ReviewRequest.prototype, {
                 success: function(rsp) {
                     var last_update = rsp.last_update;
 
-                    if ((self.checkUpdatesType == undefined ||
-                         self.checkUpdatesType == last_update.type) &&
-                        self.lastUpdateTimestamp != last_update.timestamp) {
+                    if ((self.checkUpdatesType === undefined ||
+                         self.checkUpdatesType === last_update.type) &&
+                        self.lastUpdateTimestamp !== last_update.timestamp) {
                         $.event.trigger("updated", [last_update], self);
                     }
 
@@ -658,10 +876,10 @@ RB.Review = function(review_request, id) {
     this.body_bottom = null;
     this.url = null;
     this.loaded = false;
-    this.public = null;
+    this.is_public = null;
 
     return this;
-}
+};
 
 $.extend(RB.Review.prototype, {
     createDiffComment: function(id, filediff, interfilediff, beginLineNum,
@@ -680,7 +898,7 @@ $.extend(RB.Review.prototype, {
     },
 
     createReply: function() {
-        if (this.draft_reply == null) {
+        if (this.draft_reply === null) {
             this.draft_reply = new RB.ReviewReply(this);
         }
 
@@ -717,20 +935,20 @@ $.extend(RB.Review.prototype, {
     save: function(options) {
         var data = {};
 
-        if (this.ship_it != null) {
+        if (this.ship_it !== null) {
             data.ship_it = (this.ship_it ? 1 : 0);
         }
 
-        if (this.body_top != null) {
+        if (this.body_top !== null) {
             data.body_top = this.body_top;
         }
 
-        if (this.body_bottom != null) {
+        if (this.body_bottom !== null) {
             data.body_bottom = this.body_bottom;
         }
 
-        if (options.public) {
-            data.public = 1;
+        if (options.is_public) {
+            data['public'] = 1;
         }
 
         var self = this;
@@ -765,7 +983,7 @@ $.extend(RB.Review.prototype, {
 
     publish: function(options) {
         this.save($.extend(true, {
-            public: true
+            'public': true
         }, options));
     },
 
@@ -794,7 +1012,7 @@ $.extend(RB.Review.prototype, {
                 url: self.review_request.links.reviews.href +
                      (self.id || "draft") + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -812,7 +1030,7 @@ $.extend(RB.Review.prototype, {
         this.links = rsp.review.links;
         this.url = rsp.review.links.self.href;
         this.loaded = true;
-        this.public = rsp.review.public;
+        this.is_public = rsp.review['public'];
     },
 
     _apiCall: function(options) {
@@ -840,7 +1058,7 @@ RB.ReviewGroup = function(id) {
     this.id = id;
 
     return this;
-}
+};
 
 $.extend(RB.ReviewGroup.prototype, {
     setStarred: function(starred) {
@@ -850,7 +1068,7 @@ $.extend(RB.ReviewGroup.prototype, {
 
         if (starred) {
             apiType = "POST";
-            data['object_id'] = this.id;
+            data.object_id = this.id;
         } else {
             apiType = "DELETE";
             path += this.id + "/";
@@ -875,7 +1093,7 @@ RB.ReviewReply = function(review, id) {
     this.loaded = false;
 
     return this;
-}
+};
 
 $.extend(RB.ReviewReply.prototype, {
     ready: function(on_done) {
@@ -907,16 +1125,16 @@ $.extend(RB.ReviewReply.prototype, {
     save: function(options) {
         var data = {};
 
-        if (this.body_top != null) {
+        if (this.body_top !== null) {
             data.body_top = this.body_top;
         }
 
-        if (this.body_bottom != null) {
+        if (this.body_bottom !== null) {
             data.body_bottom = this.body_bottom;
         }
 
-        if (options.public) {
-            data.public = 1;
+        if (options.is_public) {
+            data['public'] = 1;
         }
 
         var self = this;
@@ -951,7 +1169,7 @@ $.extend(RB.ReviewReply.prototype, {
 
     publish: function(options) {
         this.save($.extend(true, {
-            public: true,
+            'public': true,
             errorText: "Saving the reply draft has " +
                        "failed due to a server error:"
         }, options));
@@ -987,12 +1205,12 @@ $.extend(RB.ReviewReply.prototype, {
                 type: "GET",
                 url: self.links.diff_comments.href,
                 success: function(rsp, status) {
-                    if (rsp.diff_comments.length == 0) {
+                    if (rsp.diff_comments.length === 0) {
                         rbApiCall({
                             type: "GET",
                             url: self.links.screenshot_comments.href,
                             success: function(rsp, status) {
-                                if (rsp.screenshot_comments.length == 0) {
+                                if (rsp.screenshot_comments.length === 0) {
                                     self.discard(options);
                                 }
                             }
@@ -1012,12 +1230,12 @@ $.extend(RB.ReviewReply.prototype, {
                 url: self.review.links.replies.href +
                      (self.id ? self.id : "draft") + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
                     on_done.apply(this, arguments);
-                },
+                }
             });
         });
     },
@@ -1043,7 +1261,7 @@ RB.FileAttachment = function(review_request, id) {
     this.loaded = false;
 
     return this;
-}
+};
 
 $.extend(RB.FileAttachment.prototype, {
     setFile: function(file) {
@@ -1071,7 +1289,7 @@ $.extend(RB.FileAttachment.prototype, {
         if (this.id) {
             var data = {};
 
-            if (this.caption != null) {
+            if (this.caption !== null) {
                 data.caption = this.caption;
             }
 
@@ -1133,7 +1351,7 @@ $.extend(RB.FileAttachment.prototype, {
                 type: "GET",
                 url: self.review_request.links.file_attachments.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1169,7 +1387,7 @@ $.extend(RB.FileAttachment.prototype, {
             rbApiCall($.extend(options, {
                 url: self.review_request.links.file_attachments.href,
                 success: function(rsp) {
-                    if (rsp.stat == "ok") {
+                    if (rsp.stat === "ok") {
                         self._loadDataFromResponse(rsp);
 
                         if ($.isFunction(onSuccess)) {
@@ -1198,7 +1416,7 @@ RB.FileAttachmentCommentReply = function(reply, id, reply_to_id) {
     this.url = null;
 
     return this;
-}
+};
 
 $.extend(RB.FileAttachmentCommentReply.prototype, {
     ready: function(on_ready) {
@@ -1283,7 +1501,7 @@ $.extend(RB.FileAttachmentCommentReply.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text == "") {
+        if (this.text === "") {
             this.deleteComment();
         }
     },
@@ -1310,7 +1528,7 @@ $.extend(RB.FileAttachmentCommentReply.prototype, {
                 type: "GET",
                 url: self.reply.links.file_attachment_comments.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1340,7 +1558,7 @@ RB.Screenshot = function(review_request, id) {
     this.loaded = false;
 
     return this;
-}
+};
 
 $.extend(RB.Screenshot.prototype, {
     setFile: function(file) {
@@ -1368,7 +1586,7 @@ $.extend(RB.Screenshot.prototype, {
         if (this.id) {
             var data = {};
 
-            if (this.caption != null) {
+            if (this.caption !== null) {
                 data.caption = this.caption;
             }
 
@@ -1431,7 +1649,7 @@ $.extend(RB.Screenshot.prototype, {
                 type: "GET",
                 url: self.review_request.links.screenshots.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1468,7 +1686,7 @@ $.extend(RB.Screenshot.prototype, {
             rbApiCall($.extend(options, {
                 url: self.review_request.links.screenshots.href,
                 success: function(rsp) {
-                    if (rsp.stat == "ok") {
+                    if (rsp.stat === "ok") {
                         self._loadDataFromResponse(rsp);
 
                         if ($.isFunction(onSuccess)) {
@@ -1504,7 +1722,7 @@ RB.ScreenshotComment = function(review, id, screenshot_id, x, y, width,
     this.url = null;
 
     return this;
-}
+};
 
 $.extend(RB.ScreenshotComment.prototype, {
     ready: function(on_ready) {
@@ -1552,7 +1770,7 @@ $.extend(RB.ScreenshotComment.prototype, {
                     type = "PUT";
                     url = self.url;
 
-                    if (self.review.public) {
+                    if (self.review.is_public) {
                         data.issue_status = self.issue_status;
                     }
                 } else {
@@ -1597,7 +1815,7 @@ $.extend(RB.ScreenshotComment.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text != "") {
+        if (this.text !== "") {
             return;
         }
 
@@ -1627,7 +1845,7 @@ $.extend(RB.ScreenshotComment.prototype, {
                 url: self.review.links.screenshot_comments.href +
                      self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1661,7 +1879,7 @@ RB.FileAttachmentComment = function(review, id, file_attachment_id) {
     this.loaded = false;
     this.url = null;
     return this;
-}
+};
 
 $.extend(RB.FileAttachmentComment.prototype, {
     ready: function(on_ready) {
@@ -1756,7 +1974,7 @@ $.extend(RB.FileAttachmentComment.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text == "") {
+        if (this.text === "") {
             this.deleteComment();
         }
     },
@@ -1784,7 +2002,7 @@ $.extend(RB.FileAttachmentComment.prototype, {
                 url: self.review.links.file_attachment_comments.href +
                      self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1813,7 +2031,7 @@ RB.ScreenshotCommentReply = function(reply, id, reply_to_id) {
     this.url = null;
 
     return this;
-}
+};
 
 $.extend(RB.ScreenshotCommentReply.prototype, {
     ready: function(on_ready) {
@@ -1898,7 +2116,7 @@ $.extend(RB.ScreenshotCommentReply.prototype, {
     },
 
     deleteIfEmpty: function() {
-        if (this.text != "") {
+        if (this.text !== "") {
             return;
         }
 
@@ -1927,7 +2145,7 @@ $.extend(RB.ScreenshotCommentReply.prototype, {
                 type: "GET",
                 url: self.reply.links.screenshot_comments.href + self.id + "/",
                 success: function(rsp, status) {
-                    if (status != 404) {
+                    if (status !== 404) {
                         self._loadDataFromResponse(rsp);
                     }
 
@@ -1945,222 +2163,6 @@ $.extend(RB.ScreenshotCommentReply.prototype, {
         this.loaded = true;
     }
 });
-
-
-/*
- * Convenience wrapper for Review Board API functions. This will handle
- * any button disabling/enabling, write to the correct path prefix, form
- * uploading, and displaying server errors.
- *
- * options has the following fields:
- *
- *    buttons  - An optional list of buttons to disable/enable.
- *    form     - A form to upload, if any.
- *    type     - The request type (defaults to "POST").
- *    prefix   - The prefix to put on the API path (after SITE_ROOT, before
- *               "api")
- *    path     - The relative path to the Review Board API tree.
- *    data     - Data to send with the request.
- *    success  - An optional success callback. The default one will reload
- *               the page.
- *    error    - An optional error callback, called after the error banner
- *               is displayed.
- *    complete - An optional complete callback, called after the success or
- *               error callbacks.
- *
- * @param {object} options  The options, listed above.
- */
-function rbApiCall(options) {
-    var prefix = options.prefix || "";
-    var url = options.url || (SITE_ROOT + prefix + "api" + options.path);
-
-    function doCall() {
-        if (options.buttons) {
-            options.buttons.attr("disabled", true);
-        }
-
-        var activityIndicator = $("#activity-indicator");
-
-        if (!options.noActivityIndicator) {
-            activityIndicator
-                .removeClass("error")
-                .text((options.type || options.type == "GET")
-                      ? "Loading..." : "Saving...")
-                .show();
-        }
-
-        var data = $.extend(true, {
-            url: url,
-            data: options.data,
-            dataType: options.dataType || "json",
-            error: function(xhr, textStatus, errorThrown) {
-                var rsp = null;
-
-                try {
-                    rsp = $.httpData(xhr, options.dataType || "json");
-                } catch (e) {
-                }
-
-                if ((rsp && rsp.stat) || xhr.status == 204) {
-                    if ($.isFunction(options.success)) {
-                        options.success(rsp, xhr.status);
-                    }
-
-                    return;
-                }
-
-                var responseText = xhr.responseText;
-                activityIndicator
-                    .addClass("error")
-                    .text("A server error occurred.")
-                    .append(
-                        $("<a/>")
-                            .text("Show Details")
-                            .attr("href", "#")
-                            .click(function() {
-                                showErrorPage(xhr, responseText);
-                            })
-                    )
-                    .append(
-                        $("<a/>")
-                            .text("Dismiss")
-                            .attr("href", "#")
-                            .click(function() {
-                                activityIndicator.fadeOut("fast");
-                                return false;
-                            })
-                    );
-
-                if ($.isFunction(options.error)) {
-                    options.error(xhr, textStatus, errorThrown);
-                }
-            }
-        }, options);
-
-        data.complete = function(xhr, status) {
-            if (options.buttons) {
-                options.buttons.attr("disabled", false);
-            }
-
-            if (!options.noActivityIndicator &&
-                !activityIndicator.hasClass("error")) {
-                activityIndicator
-                    .delay(1000)
-                    .fadeOut("fast");
-            }
-
-            if ($.isFunction(options.complete)) {
-                options.complete(xhr, status);
-            }
-
-            $.funcQueue("rbapicall").next();
-        };
-
-        if (data.data == null || data.data == undefined ||
-            typeof data.data == "object") {
-            data.data = $.extend({
-                api_format: 'json'
-            }, data.data || {});
-        }
-
-        if (options.form) {
-            options.form.ajaxSubmit(data);
-        } else {
-            $.ajax(data);
-        }
-    }
-
-    function showErrorPage(xhr, data) {
-        var iframe = $('<iframe/>')
-            .width("100%");
-
-        var requestData = "(none)";
-
-        if (options.data) {
-            requestData = $.param(options.data);
-        }
-
-        var errorBox = $('<div class="server-error-box"/>')
-            .appendTo("body")
-            .append('<p><b>Error Code:</b> ' + xhr.status + '</p>')
-            .append('<p><b>Error Text:</b> ' + xhr.statusText + '</p>')
-            .append('<p><b>Request URL:</b> ' + url + '</p>')
-            .append('<p><b>Request Data:</b> ' + requestData + '</p>')
-            .append('<p class="response-data"><b>Response Data:</b></p>')
-            .append(
-                '<p>There may be useful error details below. The following ' +
-                'error page may be useful to your system administrator or ' +
-                'when <a href="http://www.reviewboard.org/bugs/new/">' +
-                'reporting a bug</a>. To save the page, right-click the ' +
-                'error below and choose "Save Page As," if available, ' +
-                'or "View Source" and save the result as a ' +
-                '<tt>.html</tt> file.</p>')
-            .append('<p><b>Warning:</b> Be sure to remove any sensitive ' +
-                    'material that may exist in the error page before ' +
-                    'reporting a bug!</p>')
-            .append(iframe)
-            .bind("resize", function() {
-                iframe.height($(this).height() - iframe.position().top);
-            })
-            .modalBox({
-                stretchX: true,
-                stretchY: true,
-                title: "Server Error Details"
-            });
-
-        var doc = iframe[0].contentDocument ||
-                  iframe[0].contentWindow.document;
-        doc.open();
-        doc.write(data);
-        doc.close();
-    }
-
-    options.type = options.type || "POST";
-
-    if (options.type != "GET") {
-        $.funcQueue("rbapicall").add(doCall);
-        $.funcQueue("rbapicall").start();
-    } else {
-        doCall();
-    }
-}
-
-
-function sendFileBlob(file, save_func, obj, options) {
-    var reader = new FileReader();
-
-    reader.onloadend = function() {
-        var boundary = "-----multipartformboundary" + new Date().getTime();
-        var blob = "";
-        blob += "--" + boundary + "\r\n";
-        blob += 'Content-Disposition: form-data; name="path"; ' +
-                'filename="' + file.name + '"\r\n';
-        blob += 'Content-Type: application/octet-stream\r\n';
-        blob += '\r\n';
-        blob += reader.result;
-        blob += '\r\n';
-        blob += "--" + boundary + "--\r\n";
-        blob += '\r\n';
-
-        save_func.call(obj, options.success, options.error, {
-            buttons: options.buttons,
-            data: blob,
-            processData: false,
-            contentType: "multipart/form-data; boundary=" + boundary,
-            xhr: function() {
-                var xhr = $.ajaxSettings.xhr();
-
-                xhr.send = function(data) {
-                    xhr.sendAsBinary(data);
-                };
-
-                return xhr;
-            }
-        });
-    };
-
-    reader.readAsBinaryString(file);
-}
 
 
 if (!XMLHttpRequest.prototype.sendAsBinary) {

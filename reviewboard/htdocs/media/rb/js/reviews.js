@@ -14,122 +14,6 @@ var gReviewRequest = new RB.ReviewRequest(gReviewRequestId,
 
 
 /*
- * "complete" signal handlers for various fields, designed to do
- * post-processing of the values for display.
- */
-var gEditorCompleteHandlers = {
-    'bugs_closed': function(data) {
-        if (gBugTrackerURL == "") {
-            return data.join(", ");
-        } else {
-            return urlizeList(data, function(item) {
-                return gBugTrackerURL.replace("%s", item);
-            });
-        }
-    },
-    'target_groups': function(data) {
-        return urlizeList(data,
-            function(item) { return item.url; },
-            function(item) { return item.name; }
-        );
-    },
-    'target_people': function(data) {
-        return $(urlizeList(data,
-                            function(item) { return item.url; },
-                            function(item) { return item.username; }))
-            .addClass("user")
-            .user_infobox();
-    },
-    'description': linkifyText,
-    'testing_done': linkifyText
-};
-
-
-/* gCommentIssueManager takes care of setting the state of a particular
- * comment issue, and also takes care of notifying callbacks whenever
- * the state is successfully changed.
- */
-var gCommentIssueManager = new function() {
-    var callbacks = {};
-    var comments = {};
-
-    /* setCommentState - set the state of comment issue
-     * @param review_id the id for the review that the comment belongs to
-     * @param comment_id the id of the comment with the issue
-     * @param comment_type the type of comment, either "comment" or
-     *                     "screenshot_comment"
-     * @param state the state to set the comment issue to - either
-     *              "open", "resolved", or "dropped"
-     */
-    this.setCommentState = function(review_id, comment_id,
-                                    comment_type, state) {
-        var comment = getComment(review_id, comment_id, comment_type);
-        requestState(comment, state);
-    }
-
-    /* registerCallback - allows clients to register callbacks to be
-     * notified when a particular comment state is updated.
-     * @param comment_id the id of the comment to be notified about
-     * @param callback a function of the form:
-     *                 function(issue_state) {}
-     */
-    this.registerCallback = function(comment_id, callback) {
-        if (!callbacks[comment_id])
-            callbacks[comment_id] = [];
-        callbacks[comment_id].push(callback);
-    }
-
-    // A helper function to either generate the appropriate
-    // comment object based on comment_type, or to grab the
-    // comment from a cache if it's been generated before.
-    function getComment(review_id, comment_id, comment_type) {
-        if (comments[comment_id])
-            return comments[comment_id];
-
-        var comment = null;
-        if (comment_type == "comment")
-            comment = gReviewRequest
-                .createReview(review_id)
-                .createDiffComment(comment_id, null, null,
-                                   null, null);
-        else if(comment_type == "screenshot_comment")
-            comment = gReviewRequest
-                .createReview(review_id)
-                .createScreenshotComment(comment_id, null, null,
-                                         null, null, null);
-        comments[comment_id] = comment;
-        return comment;
-    }
-
-    // Helper function to set the state of a comment
-    function requestState(comment, state) {
-        comment.ready(function() {
-            comment.issue_status = state;
-            comment.save({
-                success: function(rsp) {
-                    notifyCallbacks(comment.id, comment.issue_status);
-                    // We don't want the current user to receive the
-                    // notification that the review request has been
-                    // updated, since they themselves updated the
-                    // issue status.
-                    if (rsp.last_activity_time)
-                        registerForUpdates(rsp.last_activity_time);
-                }
-            });
-        });
-    }
-
-    // Helper function that notifies all callbacks registered for
-    // a particular comment
-    function notifyCallbacks(comment_id, issue_status) {
-        for (var i = 0; i < callbacks[comment_id].length; i++) {
-            callbacks[comment_id][i](issue_status);
-        }
-    }
-}();
-
-
-/*
  * Converts an array of items to a list of hyperlinks.
  *
  * By default, this will use the item as the URL and as the hyperlink text.
@@ -147,8 +31,9 @@ var gCommentIssueManager = new function() {
  */
 function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
     var str = "";
+    var i;
 
-    for (var i = 0; i < list.length; i++) {
+    for (i = 0; i < list.length; i++) {
         var item = list[i];
         str += '<a href="';
         str += (urlFunc ? urlFunc(item) : item);
@@ -178,7 +63,7 @@ function linkifyText(text) {
 
     /* Linkify all URLs. */
     text = text.replace(
-        /\b([a-z]+:\/\/[-A-Za-z0-9+&@#\/%?=~_()|!:,.;]*([-A-Za-z0-9+@#\/%=~_();|]|))/g,
+        /\b([a-z]+:\/\/[\-A-Za-z0-9+&@#\/%?=~_()|!:,.;]*([\-A-Za-z0-9+@#\/%=~_();|]|))/g,
         function(url) {
             /*
              * We might catch an entity at the end of the URL. This is hard
@@ -191,7 +76,7 @@ function linkifyText(text) {
             var extra = "";
             var parts = url.match(/^(.*)(&[a-z]+;)$/);
 
-            if (parts != null) {
+            if (parts) {
                 /* We caught an entity. Set it free. */
                 url = parts[1];
                 extra = parts[2];
@@ -203,11 +88,11 @@ function linkifyText(text) {
 
     /* Linkify /r/#/ review request numbers */
     text = text.replace(
-        /(^|\s|&lt;)\/(r\/\d+(\/[-A-Za-z0-9+&@#\/%?=~_()|!:,.;]*[-A-Za-z0-9+&@#\/%=~_()|])?)/g,
+        /(^|\s|&lt;)\/(r\/\d+(\/[\-A-Za-z0-9+&@#\/%?=~_()|!:,.;]*[\-A-Za-z0-9+&@#\/%=~_()|])?)/g,
         '$1<a href="' + SITE_ROOT + '$2">/$2</a>');
 
     /* Bug numbers */
-    if (gBugTrackerURL != "") {
+    if (gBugTrackerURL !== "") {
         text = text.replace(/\b(bug|issue) (#[^.\s]+|#?\d+)/gi,
             function(m1, m2, m3) {
                 return '<a href="' + gBugTrackerURL.replace("%s", m3) +
@@ -217,6 +102,139 @@ function linkifyText(text) {
 
     return text;
 }
+
+
+/*
+ * "complete" signal handlers for various fields, designed to do
+ * post-processing of the values for display.
+ */
+var gEditorCompleteHandlers = {
+    'bugs_closed': function(data) {
+        if (gBugTrackerURL === "") {
+            return data.join(", ");
+        } else {
+            return urlizeList(data, function(item) {
+                return gBugTrackerURL.replace("%s", item);
+            });
+        }
+    },
+    'target_groups': function(data) {
+        return urlizeList(data,
+            function(item) { return item.url; },
+            function(item) { return item.name; }
+        );
+    },
+    'target_people': function(data) {
+        return $(urlizeList(data,
+                            function(item) { return item.url; },
+                            function(item) { return item.username; }))
+            .addClass("user")
+            .user_infobox();
+    },
+    'description': linkifyText,
+    'testing_done': linkifyText
+};
+
+
+/* gCommentIssueManager takes care of setting the state of a particular
+ * comment issue, and also takes care of notifying callbacks whenever
+ * the state is successfully changed.
+ */
+var CommentIssueManager = function() {
+    var callbacks = {};
+    var comments = {};
+
+    /* setCommentState - set the state of comment issue
+     * @param review_id the id for the review that the comment belongs to
+     * @param comment_id the id of the comment with the issue
+     * @param comment_type the type of comment, either "comment" or
+     *                     "screenshot_comment"
+     * @param state the state to set the comment issue to - either
+     *              "open", "resolved", or "dropped"
+     */
+    this.setCommentState = function(review_id, comment_id,
+                                    comment_type, state) {
+        var comment = getComment(review_id, comment_id, comment_type);
+        requestState(comment, state);
+    };
+
+    /*
+     * registerCallback - allows clients to register callbacks to be
+     * notified when a particular comment state is updated.
+     * @param comment_id the id of the comment to be notified about
+     * @param callback a function of the form:
+     *                 function(issue_state) {}
+     */
+    this.registerCallback = function(comment_id, callback) {
+        if (!callbacks[comment_id]) {
+            callbacks[comment_id] = [];
+        }
+
+        callbacks[comment_id].push(callback);
+    };
+
+    /*
+     * A helper function to either generate the appropriate
+     * comment object based on comment_type, or to grab the
+     * comment from a cache if it's been generated before.
+     */
+    function getComment(review_id, comment_id, comment_type) {
+        if (comments[comment_id]) {
+            return comments[comment_id];
+        }
+
+        var comment = null;
+
+        if (comment_type === "comment") {
+            comment = gReviewRequest
+                .createReview(review_id)
+                .createDiffComment(comment_id);
+        } else if (comment_type === "screenshot_comment") {
+            comment = gReviewRequest
+                .createReview(review_id)
+                .createScreenshotComment(comment_id);
+        }
+
+        comments[comment_id] = comment;
+        return comment;
+    }
+
+    // Helper function to set the state of a comment
+    function requestState(comment, state) {
+        comment.ready(function() {
+            comment.issue_status = state;
+            comment.save({
+                success: function(rsp) {
+                    notifyCallbacks(comment.id, comment.issue_status);
+
+                    /*
+                     * We don't want the current user to receive the
+                     * notification that the review request has been
+                     * updated, since they themselves updated the
+                     * issue status.
+                     */
+                    if (rsp.last_activity_time) {
+                        registerForUpdates(rsp.last_activity_time);
+                    }
+                }
+            });
+        });
+    }
+
+    /*
+     * Helper function that notifies all callbacks registered for
+     * a particular comment
+     */
+    function notifyCallbacks(comment_id, issue_status) {
+        var i;
+
+        for (i = 0; i < callbacks[comment_id].length; i++) {
+            callbacks[comment_id][i](issue_status);
+        }
+    }
+};
+
+var gCommentIssueManager = new CommentIssueManager();
 
 
 /*
@@ -235,7 +253,7 @@ function setDraftField(field, value) {
         buttons: gDraftBannerButtons,
         success: function(rsp) {
             /* Checking if invalid user or group was entered. */
-            if (rsp.stat == "fail" && rsp.fields) {
+            if (rsp.stat === "fail" && rsp.fields) {
 
                 $('#review-request-warning')
                     .delay(6000)
@@ -247,7 +265,7 @@ function setDraftField(field, value) {
                 $.each(rsp.fields[field], function(key, value) {
                     var size = rsp.fields[field].length;
 
-                    if (key == size - 1 && size > 1) {
+                    if (key === size - 1 && size > 1) {
                       rsp.fields[field][key] = "and '" + value + "'";
                     } else {
                       rsp.fields[field][key] = "'" + value + "'";
@@ -256,14 +274,14 @@ function setDraftField(field, value) {
 
                 var message = rsp.fields[field].join(", ");
 
-                if (rsp.fields[field].length == 1) {
-                    if (field == "target_groups") {
+                if (rsp.fields[field].length === 1) {
+                    if (field === "target_groups") {
                         message = "Group " + message + " does not exist.";
                     } else {
                         message = "User " + message + " does not exist.";
                     }
                 } else {
-                    if (field == "target_groups") {
+                    if (field === "target_groups") {
                         message = "Groups " + message + " do not exist.";
                     } else {
                         message = "Users " + message + " do not exist.";
@@ -276,7 +294,7 @@ function setDraftField(field, value) {
             var func = gEditorCompleteHandlers[field];
 
             if ($.isFunction(func)) {
-                $("#" + field).html(func(rsp['draft'][field]));
+                $("#" + field).html(func(rsp.draft[field]));
             }
 
             gDraftBanner.show();
@@ -284,7 +302,7 @@ function setDraftField(field, value) {
             if (gPublishing) {
                 gPendingSaveCount--;
 
-                if (gPendingSaveCount == 0) {
+                if (gPendingSaveCount === 0) {
                     publishDraft();
                 }
             }
@@ -329,11 +347,12 @@ $.fn.reviewsAutoComplete = function(options) {
                 matchCase: false,
                 multiple: true,
                 parse: function(data) {
-                    var jsonData = eval("(" + data + ")");
+                    var jsonData = $.parseJSON(data);
                     var items = jsonData[options.fieldName];
                     var parsed = [];
+                    var i;
 
-                    for (var i = 0; i < items.length; i++) {
+                    for (i = 0; i < items.length; i++) {
                         var value = items[i];
 
                         parsed.push({
@@ -380,13 +399,13 @@ $.fn.reviewsAutoComplete = function(options) {
  * and then redirects the user to the publish URL.
  */
 function publishDraft() {
-    if ($.trim($("#target_groups").html()) == "" &&
-        $.trim($("#target_people").html()) == "") {
+    if ($.trim($("#target_groups").html()) === "" &&
+        $.trim($("#target_people").html()) === "") {
         alert("There must be at least one reviewer or group " +
         "before this review request can be published.");
-    } else if ($.trim($("#summary").html()) == "") {
+    } else if ($.trim($("#summary").html()) === "") {
         alert("The draft must have a summary.");
-    } else if ($.trim($("#description").html()) == "") {
+    } else if ($.trim($("#description").html()) === "") {
         alert("The draft must have a description.");
     } else {
         gReviewRequest.publish({
@@ -416,9 +435,9 @@ $.fn.commentSection = function(review_id, context_id, context_type) {
 
     var sectionId = context_id;
     var reviewEl = $("#review" + review_id);
-    var commentsList = $(".reply-comments", self)
+    var commentsList = $(".reply-comments", self);
     var bannersEl = $(".banners", reviewEl);
-    var bannerButtonsEl = $("input", bannersEl)
+    var bannerButtonsEl = $("input", bannersEl);
 
     var addCommentLink = $(".add_comment_link", self)
         .click(function() {
@@ -2336,4 +2355,7 @@ $(document).ready(function() {
     loadDiffFragments("diff_fragments", "comment_container");
 });
 
+/*jslint
+    onevar: false
+*/
 // vim: set et:sw=4:
