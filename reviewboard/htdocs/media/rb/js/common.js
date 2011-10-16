@@ -40,13 +40,19 @@ $.fn.formDlg = function(options) {
     }, options);
 
     return this.each(function() {
-        var self = $(this);
+        var self = $(this),
+            errors,
+            form,
+            tbody,
+            box,
+            fieldInfo = {},
+            i;
 
-        var errors = $("<div/>")
+        errors = $("<div/>")
             .addClass("error")
             .hide();
 
-        var form = $("<form/>")
+        form = $("<form/>")
             .attr("action", options.action)
             .submit(function(e) {
                 send();
@@ -66,11 +72,9 @@ $.fn.formDlg = function(options) {
             });
         }
 
-        var tbody = $("tbody", form);
+        tbody = $("tbody", form);
 
-        var fieldInfo = {};
-
-        for (var i = 0; i < options.fields.length; i++) {
+        for (i = 0; i < options.fields.length; i++) {
             var field = options.fields[i];
             fieldInfo[field.name] = {'field': field};
 
@@ -107,7 +111,7 @@ $.fn.formDlg = function(options) {
             }
         }
 
-        var box = $("<div/>")
+        box = $("<div/>")
             .addClass("formdlg")
             .append(errors)
             .append(self)
@@ -169,19 +173,22 @@ $.fn.formDlg = function(options) {
                 .show();
 
             if (rsp.fields) {
+                var fieldName;
+
                 /* Invalid form data */
-                for (var fieldName in rsp.fields) {
-                    if (!fieldInfo[fieldName]) {
-                        continue;
-                    }
+                for (fieldName in rsp.fields) {
+                    if (rsp.fields.hasOwnProperty(fieldName) &&
+                        fieldInfo[fieldName]) {
+                        var list,
+                            i;
+                        list = $(".errorlist", fieldInfo[fieldName].row)
+                            .css("display", "block");
 
-                    var list = $(".errorlist", fieldInfo[fieldName].row)
-                        .css("display", "block");
-
-                    for (var i = 0; i < rsp.fields[fieldName].length; i++) {
-                        $("<li/>")
-                            .appendTo(list)
-                            .html(rsp.fields[fieldName][i]);
+                        for (i = 0; i < rsp.fields[fieldName].length; i++) {
+                            $("<li/>")
+                                .appendTo(list)
+                                .html(rsp.fields[fieldName][i]);
+                        }
                     }
                 }
             }
@@ -202,21 +209,22 @@ $.fn.formDlg = function(options) {
  */
 $.fn.toggleStar = function() {
     // Constants
-    var STAR_ON_IMG = MEDIA_URL + "rb/images/star_on.png?" + MEDIA_SERIAL;
-    var STAR_OFF_IMG = MEDIA_URL + "rb/images/star_off.png?" + MEDIA_SERIAL;
+    var STAR_ON_IMG = MEDIA_URL + "rb/images/star_on.png?" + MEDIA_SERIAL,
+        STAR_OFF_IMG = MEDIA_URL + "rb/images/star_off.png?" + MEDIA_SERIAL;
 
     return this.live('click', function() {
-        var self = $(this);
-
-        var obj = self.data("rb.obj");
+        var self = $(this),
+            obj = self.data("rb.obj"),
+            on,
+            altTitle;
 
         if (!obj) {
-            var type = self.attr("data-object-type");
-            var objid = self.attr("data-object-id");
+            var type = self.attr("data-object-type"),
+                objid = self.attr("data-object-id");
 
-            if (type == "reviewrequests") {
+            if (type === "reviewrequests") {
                 obj = new RB.ReviewRequest(objid);
-            } else if (type == "groups") {
+            } else if (type === "groups") {
                 obj = new RB.ReviewGroup(objid);
             } else {
                 self.remove();
@@ -224,16 +232,16 @@ $.fn.toggleStar = function() {
             }
         }
 
-        var on = (parseInt(self.attr("data-starred")) == 1) ? 0 : 1;
+        on = (parseInt(self.attr("data-starred"), 10) === 1) ? 0 : 1;
         obj.setStarred(on);
         self.data("rb.obj", obj);
 
-        var alt_title = on ? "Starred" : "Click to star";
+        altTitle = on ? "Starred" : "Click to star";
         self.attr({
             src: (on ? STAR_ON_IMG : STAR_OFF_IMG),
             'data-starred': on,
-            alt: alt_title,
-            title: alt_title
+            alt: altTitle,
+            title: altTitle
         });
     });
 };
@@ -278,26 +286,29 @@ $.fn.searchAutoComplete = function() {
             selectFirst: false,
             width: 240,
             parse: function(data) {
-                var jsonData = $.parseJSON(data);
-                var jsonDataSearch = jsonData.search;
-                var parsed = [];
-                var objects = ["users", "groups", "review_requests"];
-                var values = ["username", "name", "summary"];
-                var items;
+                var jsonData = $.parseJSON(data),
+                    jsonDataSearch = jsonData.search,
+                    parsed = [],
+                    objects = ["users", "groups", "review_requests"],
+                    values = ["username", "name", "summary"],
+                    items,
+                    j;
 
-                for (var j = 0; j < objects.length; j++) {
+                for (j = 0; j < objects.length; j++) {
+                    var i;
+
                     items = jsonDataSearch[objects[j]];
 
-                    for (var i = 0; i < items.length; i++) {
+                    for (i = 0; i < items.length; i++) {
                         var value = items[i];
 
-                        if (j != 2) {
+                        if (j !== 2) {
                             parsed.push({
                                 data: value,
                                 value: value[values[j]],
                                 result: value[values[j]]
                             });
-                        } else if (value.public) {
+                        } else if (value['public']) {
                             // Only show review requests that are public
                             value.url = SITE_ROOT + "r/" + value.id;
                             parsed.push({
@@ -312,7 +323,7 @@ $.fn.searchAutoComplete = function() {
                 return parsed;
             },
             url: SITE_ROOT + "api/" + "search/"
-        })
+        });
 };
 
 var gUserInfoBoxCache = {};
@@ -323,25 +334,26 @@ var gUserInfoBoxCache = {};
  * The infobox is displayed after a 1 second delay.
  */
 $.fn.user_infobox = function() {
-    var POPUP_DELAY_MS = 1000;
-    var OFFSET_LEFT = -20;
-    var OFFSET_TOP = -30;
+    var POPUP_DELAY_MS = 1000,
+        OFFSET_LEFT = -20,
+        OFFSET_TOP = -30,
+        infobox = $("#user-infobox");
 
-    var infobox = $("#user-infobox");
-
-    if (infobox.length == 0) {
+    if (infobox.length === 0) {
         infobox = $("<div id='user-infobox'/>'").hide();
         $(document.body).append(infobox);
     }
 
     return this.each(function() {
-        var self = $(this);
-        var timeout = null;
-        var url = self.attr('href') + 'infobox/';
+        var self = $(this),
+            timeout = null,
+            url = self.attr('href') + 'infobox/';
 
         self.hover(
             function() {
                 timeout = setTimeout(function() {
+                    var offset;
+
                     if (!gUserInfoBoxCache[url]) {
                         infobox
                             .empty()
@@ -355,7 +367,7 @@ $.fn.user_infobox = function() {
                         infobox.html(gUserInfoBoxCache[url]);
                     }
 
-                    var offset = self.offset();
+                    offset = self.offset();
 
                     infobox
                         .move(offset.left + OFFSET_LEFT,
@@ -369,20 +381,20 @@ $.fn.user_infobox = function() {
                 infobox.hide();
             });
     });
-}
+};
 
 
 $(document).ready(function() {
-    $('<div id="activity-indicator" />')
-        .text("Loading...")
-        .hide()
-        .appendTo("body");
-
     var searchGroupsEl = $("#search_field");
 
     if (searchGroupsEl.length > 0) {
         searchGroupsEl.searchAutoComplete();
     }
+
+    $('<div id="activity-indicator" />')
+        .text("Loading...")
+        .hide()
+        .appendTo("body");
 
     $('.user').user_infobox();
     $('.star').toggleStar();

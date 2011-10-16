@@ -12,6 +12,13 @@ var ANCHOR_CHUNK = 4;
 
 // State
 var gDiff;
+var gSelectedAnchor = INVALID;
+var gFileAnchorToId = {};
+var gInterdiffFileAnchorToId = {};
+var gAnchors = $();
+var gHiddenComments = {};
+var gDiffHighlightBorder = null;
+var gStartAtAnchor = null;
 
 
 /*
@@ -77,16 +84,6 @@ var gActions = [
 ];
 
 
-// State variables
-var gSelectedAnchor = INVALID;
-var gFileAnchorToId = {};
-var gInterdiffFileAnchorToId = {};
-var gAnchors = $();
-var gHiddenComments = {};
-var gDiffHighlightBorder = null;
-var gStartAtAnchor = null;
-
-
 /*
  * Creates a comment block in the diff viewer.
  *
@@ -133,7 +130,7 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
     this.countEl = $("<span/>")
         .appendTo(innerFlag);
 
-    if ($.browser.msie && $.browser.version == 6) {
+    if ($.browser.msie && $.browser.version === 6) {
         /*
          * Tooltips for some reason cause comment flags to disappear in IE6.
          * So for now, just fake them and never show them.
@@ -155,7 +152,9 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
      * stored list of comments.
      */
     if (comments && comments.length > 0) {
-        for (var i in comments) {
+        var i;
+
+        for (i = 0; i < comments.length; i++) {
             var comment = comments[i];
 
             if (comment.localdraft) {
@@ -214,8 +213,10 @@ $.extend(DiffCommentBlock.prototype, {
      * Updates the tooltip contents.
      */
     updateTooltip: function() {
+        var list = $("<ul/>"),
+            i;
+
         this.tooltip.empty();
-        var list = $("<ul/>");
 
         if (this.draftComment) {
             $("<li/>")
@@ -224,7 +225,7 @@ $.extend(DiffCommentBlock.prototype, {
                 .appendTo(list);
         }
 
-        for (var i = 0; i < this.comments.length; i++) {
+        for (i = 0; i < this.comments.length; i++) {
             $("<li/>")
                 .text(this.comments[i].text.truncate())
                 .appendTo(list);
@@ -289,7 +290,7 @@ $.extend(DiffCommentBlock.prototype, {
     },
 
     _createDraftComment: function(id, text) {
-        if (this.draftComment != null) {
+        if (this.draftComment !== null) {
             return;
         }
 
@@ -315,8 +316,8 @@ $.extend(DiffCommentBlock.prototype, {
             self.draftComment = null;
 
             /* Discard the comment block if empty. */
-            if (self.comments.length == 0) {
-                el.fadeOut(350, function() { el.remove(); })
+            if (self.comments.length === 0) {
+                el.fadeOut(350, function() { el.remove(); });
                 self.anchor.remove();
             } else {
                 el.removeClass("draft");
@@ -336,6 +337,17 @@ $.extend(DiffCommentBlock.prototype, {
         el.addClass("draft");
     }
 });
+
+
+/*
+ * Sets the active anchor on the page, optionally scrolling to it.
+ *
+ * @param {string} name    The anchor name.
+ * @param {bool}   scroll  If true, scrolls the page to the anchor.
+ */
+function gotoAnchor(name, scroll) {
+    return scrollToAnchor($("a[name=" + name + "]"), scroll || false);
+}
 
 
 /*
@@ -390,7 +402,7 @@ $.fn.diffFile = function(lines, key) {
                  */
                 var node = e.target;
 
-                if (ghostCommentFlagCell != null) {
+                if (ghostCommentFlagCell !== null) {
                     node = ghostCommentFlagCell[0];
                 }
 
@@ -413,7 +425,7 @@ $.fn.diffFile = function(lines, key) {
                  */
                 var node = e.target;
 
-                if (ghostCommentFlagCell != null) {
+                if (ghostCommentFlagCell !== null) {
                     node = ghostCommentFlagCell[0];
                 }
 
@@ -450,8 +462,8 @@ $.fn.diffFile = function(lines, key) {
 
                 if (isLineNumCell(node[0])) {
                     addRowToSelection(row);
-                } else if (ghostCommentFlagCell != null &&
-                           node[0] != ghostCommentFlagCell[0]) {
+                } else if (ghostCommentFlagCell !== null &&
+                           node[0] !== ghostCommentFlagCell[0]) {
                     row.removeClass("selected");
                 }
             })
@@ -466,16 +478,16 @@ $.fn.diffFile = function(lines, key) {
                 var node = getActualLineNumCell($(e.fromElement ||
                                                   e.originalTarget));
 
-                if (relTarget != ghostCommentFlag[0]) {
+                if (relTarget !== ghostCommentFlag[0]) {
                     ghostCommentFlag.hide();
                     ghostCommentFlagCell = null;
                 }
 
-                if (selection.begin != null) {
-                    if (relTarget != null && isLineNumCell(relTarget)) {
+                if (selection.begin !== null) {
+                    if (relTarget !== null && isLineNumCell(relTarget)) {
                         removeOldRowsFromSelection($(relTarget.parentNode));
                     }
-                } else if (node != null && isLineNumCell(node[0])) {
+                } else if (node !== null && isLineNumCell(node[0])) {
                     /*
                      * Opera seems to generate lots of spurious mouse-out
                      * events, which would cause us to get all sorts of
@@ -491,12 +503,11 @@ $.fn.diffFile = function(lines, key) {
                 var node = getActualLineNumCell($(target));
                 var row = node.parent();
 
-                if (selection.lastSeenIndex == row[0].rowIndex) {
+                if (selection.lastSeenIndex === row[0].rowIndex) {
                     return;
                 }
 
                 if (isLineNumCell(node[0])) {
-                    var row = node.parent();
                     removeOldRowsFromSelection(row);
                     addRowToSelection(row);
                 }
@@ -516,7 +527,7 @@ $.fn.diffFile = function(lines, key) {
         function beginSelection(row) {
             selection.begin    = selection.end    = row;
             selection.beginNum = selection.endNum =
-                parseInt(row.attr('line'));
+                parseInt(row.attr('line'), 10);
 
             selection.lastSeenIndex = row[0].rowIndex;
             row.addClass("selected");
@@ -532,12 +543,12 @@ $.fn.diffFile = function(lines, key) {
         function endSelection(row) {
             row.removeClass("selected");
 
-            if (selection.beginNum == selection.endNum) {
+            if (selection.beginNum === selection.endNum) {
                 /* See if we have a comment flag on the selected row. */
                 var commentFlag = row.find(".commentflag");
 
-                if (commentFlag.length == 1) {
-                    commentFlag.click()
+                if (commentFlag.length === 1) {
+                    commentFlag.click();
                     return;
                 }
             }
@@ -566,9 +577,12 @@ $.fn.diffFile = function(lines, key) {
         function addRowToSelection(row) {
             row.css("cursor", "pointer");
 
-            if (selection.begin != null) {
+            if (selection.begin !== null) {
                 /* We have an active selection. */
-                var linenum = parseInt(row.attr("line"));
+                var linenum = parseInt(row.attr("line"), 10),
+                    min,
+                    max,
+                    i;
 
                 if (linenum < selection.beginNum) {
                     selection.beginNum = linenum;
@@ -578,12 +592,10 @@ $.fn.diffFile = function(lines, key) {
                     selection.endNum = linenum;
                 }
 
-                var min = Math.min(selection.lastSeenIndex,
-                                   row[0].rowIndex);
-                var max = Math.max(selection.lastSeenIndex,
-                                   row[0].rowIndex);
+                min = Math.min(selection.lastSeenIndex, row[0].rowIndex);
+                max = Math.max(selection.lastSeenIndex, row[0].rowIndex);
 
-                for (var i = min; i <= max; i++) {
+                for (i = min; i <= max; i++) {
                     $(self[0].rows[i]).addClass("selected");
                 }
 
@@ -592,7 +604,7 @@ $.fn.diffFile = function(lines, key) {
                 var lineNumCell = row[0].cells[0];
 
                 /* See if we have a comment flag in here. */
-                if ($(".commentflag", lineNumCell).length == 0) {
+                if ($(".commentflag", lineNumCell).length === 0) {
                     ghostCommentFlag
                         .css("top", row.offset().top - 1)
                         .show()
@@ -615,7 +627,9 @@ $.fn.diffFile = function(lines, key) {
             var destRowIndex = row[0].rowIndex;
 
             if (destRowIndex >= selection.begin[0].rowIndex) {
-                for (var i = selection.lastSeenIndex;
+                var i;
+
+                for (i = selection.lastSeenIndex;
                      i > destRowIndex;
                      i--) {
                     $(self[0].rows[i]).removeClass("selected");
@@ -629,11 +643,12 @@ $.fn.diffFile = function(lines, key) {
          * Resets the selection information.
          */
         function resetSelection() {
-            if (selection.begin != null) {
+            if (selection.begin !== null) {
                 /* Reset the selection. */
-                var rows = self[0].rows;
+                var rows = self[0].rows,
+                    i;
 
-                for (var i = selection.begin[0].rowIndex;
+                for (i = selection.begin[0].rowIndex;
                      i <= selection.end[0].rowIndex;
                      i++) {
                     $(rows[i]).removeClass("selected");
@@ -658,7 +673,7 @@ $.fn.diffFile = function(lines, key) {
          * @return {bool} true if the cell is the line number cell.
          */
         function isLineNumCell(cell) {
-            return (cell.tagName == "TH" &&
+            return (cell.tagName === "TH" &&
                     cell.parentNode.getAttribute('line'));
         }
 
@@ -676,7 +691,7 @@ $.fn.diffFile = function(lines, key) {
          */
         function getActualLineNumCell(node) {
             if (node.hasClass("commentflag")) {
-                if (node[0] == ghostCommentFlag[0]) {
+                if (node[0] === ghostCommentFlag[0]) {
                     node = ghostCommentFlagCell;
                 } else {
                     node = node.parent();
@@ -726,7 +741,7 @@ $.fn.highlightChunk = function() {
         /* On IE, the black rectangle is too far to the top. */
         borderOffsetY = -borderOffsetY;
 
-        if ($.browser.msie && $.browser.version == 8) {
+        if ($.browser.msie && $.browser.version === 8) {
             /* And on IE8, it's also too far to the left. */
             borderOffsetX = -borderOffsetX;
         }
@@ -742,8 +757,10 @@ $.fn.highlightChunk = function() {
      * Updates the position of the border elements.
      */
     function updatePosition(event) {
+        var offset;
+
         if (event && event.target &&
-            event.target != window &&
+            event.target !== window &&
             !event.target.getElementsByTagName) {
 
             /*
@@ -753,61 +770,55 @@ $.fn.highlightChunk = function() {
             return;
         }
 
-        var offset = el.position();
+        offset = el.position();
 
-        if (!offset) {
-            return;
+        if (offset) {
+            var left = Math.round(offset.left),
+                top = Math.round(offset.top),
+                width = el.outerWidth(),
+                height = el.outerHeight();
+
+            if (left !== oldLeft ||
+                top !== oldTop ||
+                width !== oldWidth ||
+                height !== oldHeight) {
+                var outerHeight = height + borderHeight,
+                    outerWidth  = width + borderWidth,
+                    outerLeft   = left - borderOffsetX,
+                    outerTop    = top - borderOffsetY;
+
+                gDiffHighlightBorder.left.css({
+                    left: outerLeft,
+                    top: outerTop,
+                    height: outerHeight
+                });
+
+                gDiffHighlightBorder.top.css({
+                    left: outerLeft,
+                    top: outerTop,
+                    width: outerWidth
+                });
+
+                gDiffHighlightBorder.right.css({
+                    left: outerLeft + width,
+                    top: outerTop,
+                    height: outerHeight
+                });
+
+                gDiffHighlightBorder.bottom.css({
+                    left: outerLeft,
+                    top: outerTop + height,
+                    width: outerWidth
+                });
+
+                oldLeft = left;
+                oldTop = top;
+                oldWidth = width;
+                oldHeight = height;
+
+                updateQueued = false;
+            }
         }
-
-        var left = Math.round(offset.left);
-        var top = Math.round(offset.top);
-        var width = el.outerWidth();
-        var height = el.outerHeight();
-
-        if (left == oldLeft &&
-            top == oldTop &&
-            width == oldWidth &&
-            height == oldHeight) {
-
-            /* The position and size haven't actually changed. */
-            return;
-        }
-
-        var outerHeight = height + borderHeight;
-        var outerWidth  = width + borderWidth;
-        var outerLeft   = left - borderOffsetX;
-        var outerTop    = top - borderOffsetY;
-
-        gDiffHighlightBorder.left.css({
-            left: outerLeft,
-            top: outerTop,
-            height: outerHeight
-        });
-
-        gDiffHighlightBorder.top.css({
-            left: outerLeft,
-            top: outerTop,
-            width: outerWidth
-        });
-
-        gDiffHighlightBorder.right.css({
-            left: outerLeft + width,
-            top: outerTop,
-            height: outerHeight
-        });
-
-        gDiffHighlightBorder.bottom.css({
-            left: outerLeft,
-            top: outerTop + height,
-            width: outerWidth
-        });
-
-        oldLeft = left;
-        oldTop = top;
-        oldWidth = width;
-        oldHeight = height;
-
-        updateQueued = false;
     }
 
     /*
@@ -840,17 +851,6 @@ $.fn.highlightChunk = function() {
 
 
 /*
- * Sets the active anchor on the page, optionally scrolling to it.
- *
- * @param {string} name    The anchor name.
- * @param {bool}   scroll  If true, scrolls the page to the anchor.
- */
-function gotoAnchor(name, scroll) {
-    return scrollToAnchor($("a[name=" + name + "]"), scroll || false);
-}
-
-
-/*
  * Finds the row in a table matching the specified line number.
  *
  * @param {HTMLElement} table     The table element.
@@ -861,14 +861,18 @@ function gotoAnchor(name, scroll) {
  * @param {HTMLElement} The resulting row, or null if not found.
  */
 function findLineNumRow(table, linenum, startRow, endRow) {
-    var row = null;
-    var row_offset = 1; // Get past the headers.
+    var row = null,
+        row_offset = 1, // Get past the headers.
+        low,
+        high,
+        i;
 
     if (table.rows.length - row_offset > linenum) {
         row = table.rows[row_offset + linenum];
 
         // Account for the "x lines hidden" row.
-        if (row != null && parseInt(row.getAttribute('line')) == linenum) {
+        if (row !== null &&
+            parseInt(row.getAttribute('line'), 10) === linenum) {
             return row;
         }
     }
@@ -878,15 +882,15 @@ function findLineNumRow(table, linenum, startRow, endRow) {
         startRow -= row_offset;
     }
 
-    var low = startRow || 1;
-    var high = Math.min(endRow || table.rows.length, table.rows.length);
+    low = startRow || 1;
+    high = Math.min(endRow || table.rows.length, table.rows.length);
 
-    if (endRow != undefined && endRow < table.rows.length) {
+    if (endRow !== undefined && endRow < table.rows.length) {
         /* See if we got lucky and found it in the last row. */
-        if (parseInt(table.rows[endRow].getAttribute('line')) == linenum) {
+        if (parseInt(table.rows[endRow].getAttribute('line'), 10) === linenum) {
             return table.rows[endRow];
         }
-    } else if (row != null) {
+    } else if (row !== null) {
         /*
          * We collapsed the rows (unless someone mucked with the DB),
          * so the desired row is less than the row number retrieved.
@@ -895,7 +899,12 @@ function findLineNumRow(table, linenum, startRow, endRow) {
     }
 
     /* Binary search for this cell. */
-    for (var i = Math.round((low + high) / 2); low < high - 1;) {
+    for (i = Math.round((low + high) / 2); low < high - 1;) {
+        var value,
+            guessRowNum,
+            oldHigh,
+            oldLow;
+
         row = table.rows[row_offset + i];
 
         if (!row) {
@@ -911,7 +920,7 @@ function findLineNumRow(table, linenum, startRow, endRow) {
             continue;
         }
 
-        var value = parseInt(row.getAttribute('line'))
+        value = parseInt(row.getAttribute('line'), 10)
 
         if (!value) {
             /*
@@ -920,9 +929,10 @@ function findLineNumRow(table, linenum, startRow, endRow) {
              * but the following makes sure we explore all
              * rows
              */
-            var found = false;
+            var found = false,
+                k;
 
-            for (var k = 1; k <= (high-low) / 2; k++) {
+            for (k = 1; k <= (high-low) / 2; k++) {
                 row = table.rows[row_offset + i + k];
                 if (row && parseInt(row.getAttribute('line'))) {
                     i = i + k;
@@ -946,7 +956,7 @@ function findLineNumRow(table, linenum, startRow, endRow) {
         }
 
         /* See if we can use simple math to find the row quickly. */
-        var guessRowNum = linenum - value + row_offset + i;
+        guessRowNum = linenum - value + row_offset + i;
 
         if (guessRowNum >= 0 && guessRowNum < table.rows.length) {
             var guessRow = table.rows[guessRowNum];
@@ -958,8 +968,8 @@ function findLineNumRow(table, linenum, startRow, endRow) {
             }
         }
 
-        var oldHigh = high;
-        var oldLow = low;
+        oldHigh = high;
+        oldLow = low;
 
         if (value > linenum) {
             high = i;

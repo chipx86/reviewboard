@@ -25,15 +25,16 @@ RB = {};
  * @param {object} options  The options, listed above.
  */
 function rbApiCall(options) {
-    var prefix = options.prefix || "";
-    var url = options.url || (SITE_ROOT + prefix + "api" + options.path);
+    var prefix = options.prefix || "",
+        url = options.url || (SITE_ROOT + prefix + "api" + options.path);
 
     function doCall() {
+        var activityIndicator = $("#activity-indicator"),
+            data;
+
         if (options.buttons) {
             options.buttons.attr("disabled", true);
         }
-
-        var activityIndicator = $("#activity-indicator");
 
         if (!options.noActivityIndicator) {
             activityIndicator
@@ -43,12 +44,13 @@ function rbApiCall(options) {
                 .show();
         }
 
-        var data = $.extend(true, {
+        data = $.extend(true, {
             url: url,
             data: options.data,
             dataType: options.dataType || "json",
             error: function(xhr, textStatus, errorThrown) {
-                var rsp = null;
+                var rsp = null,
+                    responseText;
 
                 try {
                     rsp = $.httpData(xhr, options.dataType || "json");
@@ -63,7 +65,7 @@ function rbApiCall(options) {
                     return;
                 }
 
-                var responseText = xhr.responseText;
+                responseText = xhr.responseText;
                 activityIndicator
                     .addClass("error")
                     .text("A server error occurred.")
@@ -124,16 +126,15 @@ function rbApiCall(options) {
     }
 
     function showErrorPage(xhr, data) {
-        var iframe = $('<iframe/>')
+        var requestData = (options.data ? "(none" : $.param(options.data)),
+            iframe,
+            errorBox,
+            doc;
+
+        iframe = $('<iframe/>')
             .width("100%");
 
-        var requestData = "(none)";
-
-        if (options.data) {
-            requestData = $.param(options.data);
-        }
-
-        var errorBox = $('<div class="server-error-box"/>')
+        errorBox = $('<div class="server-error-box"/>')
             .appendTo("body")
             .append('<p><b>Error Code:</b> ' + xhr.status + '</p>')
             .append('<p><b>Error Text:</b> ' + xhr.statusText + '</p>')
@@ -161,8 +162,7 @@ function rbApiCall(options) {
                 title: "Server Error Details"
             });
 
-        var doc = iframe[0].contentDocument ||
-                  iframe[0].contentWindow.document;
+        doc = iframe[0].contentDocument || iframe[0].contentWindow.document;
         doc.open();
         doc.write(data);
         doc.close();
@@ -183,8 +183,9 @@ function sendFileBlob(file, save_func, obj, options) {
     var reader = new FileReader();
 
     reader.onloadend = function() {
-        var boundary = "-----multipartformboundary" + new Date().getTime();
-        var blob = "";
+        var boundary = "-----multipartformboundary" + new Date().getTime(),
+            blob = "";
+
         blob += "--" + boundary + "\r\n";
         blob += 'Content-Disposition: form-data; name="path"; ' +
                 'filename="' + file.name + '"\r\n';
@@ -270,9 +271,11 @@ $.extend(RB.DiffComment.prototype, {
 
         self.ready(function() {
             self.review.ensureCreated(function() {
-                var type = "POST";
-                var url;
-                var data = {
+                var type = "POST",
+                    url,
+                    data;
+
+                data = {
                     text: self.text,
                     issue_opened: self.issue_opened,
                     first_line: self.beginLineNum,
@@ -426,11 +429,11 @@ $.extend(RB.DiffCommentReply.prototype, {
 
         self.ready(function() {
             self.reply.ensureCreated(function() {
-                var type;
-                var url;
-                var data = {
-                    text: self.text
-                };
+                var type,
+                    url,
+                    data = {
+                        text: self.text
+                    };
 
                 if (self.loaded) {
                     type = "PUT";
@@ -719,9 +722,9 @@ $.extend(RB.ReviewRequest.prototype, {
     },
 
     setStarred: function(starred) {
-        var apiType;
-        var path = "/users/" + gUserName + "/watched/review-requests/";
-        var data = {};
+        var apiType,
+            path = "/users/" + gUserName + "/watched/review-requests/",
+            data = {};
 
         if (starred) {
             apiType = "POST";
@@ -769,8 +772,8 @@ $.extend(RB.ReviewRequest.prototype, {
     },
 
     close: function(options) {
-        var self = this;
-        var statusType;
+        var self = this,
+            statusType;
 
         if (options.type === RB.ReviewRequest.CLOSE_DISCARDED) {
             statusType = "discarded";
@@ -939,7 +942,8 @@ $.extend(RB.Review.prototype, {
     },
 
     save: function(options) {
-        var data = {};
+        var self = this,
+            data = {};
 
         if (this.ship_it !== null) {
             data.ship_it = (this.ship_it ? 1 : 0);
@@ -957,11 +961,9 @@ $.extend(RB.Review.prototype, {
             data['public'] = 1;
         }
 
-        var self = this;
-
         this.ready(function() {
-            var type;
-            var url;
+            var type,
+                url;
 
             if (self.loaded) {
                 type = "PUT";
@@ -1068,9 +1070,9 @@ RB.ReviewGroup = function(id) {
 
 $.extend(RB.ReviewGroup.prototype, {
     setStarred: function(starred) {
-        var apiType;
-        var path = "/users/" + gUserName + "/watched/review-groups/";
-        var data = {};
+        var apiType,
+            path = "/users/" + gUserName + "/watched/review-groups/",
+            data = {};
 
         if (starred) {
             apiType = "POST";
@@ -1129,7 +1131,8 @@ $.extend(RB.ReviewReply.prototype, {
     },
 
     save: function(options) {
-        var data = {};
+        var self = this,
+            data = {};
 
         if (this.body_top !== null) {
             data.body_top = this.body_top;
@@ -1143,11 +1146,9 @@ $.extend(RB.ReviewReply.prototype, {
             data['public'] = 1;
         }
 
-        var self = this;
-
         this.ready(function() {
-            var type;
-            var url;
+            var type,
+                url;
 
             if (self.loaded) {
                 type = "PUT";
@@ -1293,13 +1294,13 @@ $.extend(RB.FileAttachment.prototype, {
         }, options);
 
         if (this.id) {
-            var data = {};
+            var self = this,
+                data = {};
 
             if (this.caption !== null) {
                 data.caption = this.caption;
             }
 
-            var self = this;
             this.ready(function() {
                 rbApiCall({
                     type: "PUT",
@@ -1345,12 +1346,12 @@ $.extend(RB.FileAttachment.prototype, {
     },
 
     _load: function(on_done) {
+        var self = this;
+
         if (!this.id) {
             on_done.apply(this, arguments);
             return;
         }
-
-        var self = this;
 
         self.review_request.ready(function() {
             rbApiCall({
@@ -1452,11 +1453,11 @@ $.extend(RB.FileAttachmentCommentReply.prototype, {
 
         self.ready(function() {
             self.reply.ensureCreated(function() {
-                var type;
-                var url;
-                var data = {
-                    text: self.text
-                };
+                var type,
+                    url,
+                    data = {
+                        text: self.text
+                    };
 
                 if (self.loaded) {
                     type = "PUT";
@@ -1590,13 +1591,12 @@ $.extend(RB.Screenshot.prototype, {
         }, options);
 
         if (this.id) {
-            var data = {};
+            var self = this,
+                data = {};
 
             if (this.caption !== null) {
                 data.caption = this.caption;
             }
-
-            var self = this;
 
             this.ready(function() {
                 rbApiCall({
@@ -1643,12 +1643,12 @@ $.extend(RB.Screenshot.prototype, {
     },
 
     _load: function(on_done) {
+        var self = this;
+
         if (!this.id) {
             on_done.apply(this, arguments);
             return;
         }
-
-        var self = this;
 
         self.review_request.ready(function() {
             rbApiCall({
@@ -1761,16 +1761,16 @@ $.extend(RB.ScreenshotComment.prototype, {
 
         self.ready(function() {
             self.review.ensureCreated(function() {
-                var type;
-                var url;
-                var data = {
-                    text: self.text,
-                    x: self.x,
-                    y: self.y,
-                    w: self.width,
-                    h: self.height,
-                    issue_opened: self.issue_opened
-                };
+                var type,
+                    url,
+                    data = {
+                        text: self.text,
+                        x: self.x,
+                        y: self.y,
+                        w: self.width,
+                        h: self.height,
+                        issue_opened: self.issue_opened
+                    };
 
                 if (self.loaded) {
                     type = "PUT";
@@ -1931,18 +1931,18 @@ $.extend(RB.FileAttachmentComment.prototype, {
 
         self.ready(function() {
             self.review.ensureCreated(function() {
-                var type;
-                var url;
-                var data = {
-                    text: self.text,
-                    issue_opened: self.issue_opened
-                };
+                var type,
+                    url,
+                    data = {
+                        text: self.text,
+                        issue_opened: self.issue_opened
+                    };
 
                 if (self.loaded) {
                     type = "PUT";
                     url = self.url;
 
-                    if (self.review.public) {
+                    if (self.review.is_public) {
                         data.issue_status = self.issue_status;
                     }
                 } else {
@@ -2079,11 +2079,11 @@ $.extend(RB.ScreenshotCommentReply.prototype, {
 
         self.ready(function() {
             self.reply.ensureCreated(function() {
-                var type;
-                var url;
-                var data = {
-                    text: self.text
-                };
+                var type,
+                    url,
+                    data = {
+                        text: self.text
+                    };
 
                 if (self.loaded) {
                     type = "PUT";
@@ -2193,6 +2193,5 @@ if (!XMLHttpRequest.prototype.sendAsBinary) {
         XMLHttpRequest.prototype.send.call(this, data.buffer);
     };
 }
-
 
 // vim: set et:sw=4:

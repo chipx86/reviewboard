@@ -2558,7 +2558,4 @@ $(document).ready(function() {
     loadDiffFragments("diff_fragments", "comment_container");
 });
 
-/*jslint
-    onevar: false
-*/
 // vim: set et:sw=4:
