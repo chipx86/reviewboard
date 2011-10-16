@@ -1,33 +1,4 @@
 /****************************************************************************
- * New Review Request
- ****************************************************************************/
-.new-review-request {
-  background-color: #fefadf;
-  background-image: url('../images/review_request_box_top_bg.png');
-}
-
-.new-review-request label {
-  color: #575012;
-  font-weight: bold;
-}
-
-.new-review-request tr {
-  padding-top: 4px;
-}
-
-.new-review-request .box-inner {
-  background-image: url('../images/review_request_box_bottom_bg.png');
-}
-
-.new-review-request table,
-#id_basedir,
-#id_diff_path,
-#id_parent_diff_path {
-   width: 100%;
-}
-
-
-/****************************************************************************
  * Review Request Box
  ****************************************************************************/
 .inline-editor-form.summary-editor {
@@ -1025,20 +996,19 @@
 }
 
 .issue-state {
-  font-size: 90%;
+  font-size: 95%;
   font-weight: bold;
-  padding-bottom: 5px;
-  padding-left: 25px;
-  padding-top: 5px;
+  padding: 0.3em 0.4em 0.3em 2.5em;
 }
 
 .issue-state.dropped {
-  background: url('../images/cancel_grey.png') #E5E5E5 no-repeat 5px 50%;
+  background: url('../images/closed_issue.png') #EAEAEA no-repeat 5px 50%;
+  border: 1px solid #D0D0D0;
 }
 
 .issue-state.open {
-  background: url('../images/warning.png') #FFFF7C no-repeat 5px 50%;
-  border: 1px solid #ff7500;
+  background: url('../images/open_issue.png') #fff47c no-repeat 5px 50%;
+  border: 1px solid #a89c00;
 }
 
 .issue-state.resolved {
@@ -1046,9 +1016,6 @@
 }
 
 .issue-button {
-  border: 1px outset black;
-  font-size: 90%;
-  font-weight: bold;
   margin-left: 5px;
 }
 
@@ -1156,3 +1123,63 @@
 * html .clearfix {height: 1%;}
 .clearfix {display: block;}
 /* End hide from IE-mac */
+
+
+/****************************************************************************
+ * Issue Summary
+ ****************************************************************************/
+
+.issue-summary {
+  font-size: 13px;
+  font-weight: bold;
+  display: inline;
+  float: left;
+}
+
+.issue-table td {
+  border-width: 1px 0px;
+  border-style: solid;
+  padding: 1px 5px;
+}
+
+.issue-open td {
+  background-color: #FFF47C;
+  border-color: #A89C00;
+}
+
+.issue-dropped td {
+  background-color: #EAEAEA;
+  border-color: #D0D0D0;
+}
+
+.issue-resolved td {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.issue-table {
+  clear: left;
+  margin: 5px 10px;
+  padding: 5px 5px;
+  font-size: 12px;
+  border-spacing: 0px 2px;
+}
+
+.issue-table tr {
+  margin: 5px 0px;
+}
+
+.issue-table th {
+  padding: 0px 5px;
+  font-size: 13px;
+}
+
+.issue-table .description a {
+  text-decoration: None;
+  color: #000;
+}
+
+.counters {
+  text-align: right;
+  font-size: 12px;
+}

@@ -1,7 +1,9 @@
 {% extends "reviews/reviewable_base.html" %}
 {% load i18n %}
 {% load djblets_deco %}
+{% load djblets_extensions %}
 {% load djblets_utils %}
+{% load rb_extensions %}
 {% load reviewtags %}
 
 {% block title %}{{review_request_details.summary}} | {% trans "Review Request" %}{% endblock %}
@@ -12,19 +14,13 @@
 {% endblock %}
 
 {% block css %}
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/diffviewer.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/reviews.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/syntax.css?{{MEDIA_SERIAL}}" />
+{{block.super}}
+
 {% if siteconfig.settings.diffviewer_show_trailing_whitespace|default_if_none:1 %}
 <style type="text/css">
   .ew { background: #ee3434; }
 </style>
 {% endif %}
-{% endblock %}
-
-{% block scripts-post %}
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/reviews.js?{{MEDIA_SERIAL}}"></script>
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/jquery.form.js?{{MEDIA_SERIAL}}"></script>
 {% endblock %}
 
 {% block content %}
@@ -34,6 +30,8 @@
 {% box "review-request" %}
 
 <ul class="actions">
+{% review_request_action_hooks %}
+{% review_request_dropdown_action_hooks %}
 {% include "reviews/review_request_actions_secondary.html" %}
 {% if review_request_details.diffset or review_request.diffset_history.diffsets.count %}
  <li class="primary"><a href="diff/raw/">{% trans "Download Diff" %}</a></li>
@@ -59,7 +57,42 @@
 </div>
 {% endbox %}
 
-
+{% box %}
+<div class="main">
+ <div class="header">
+  <div class="collapse-button"></div>
+  <div class="issue-summary">{% trans "Issue Summary:" %}</div>
+  <div class="counters">
+   <b>Total: {{issues.total}}&nbsp;</b>
+   Open: {{issues.open}}&nbsp;
+   Resolved: {{issues.resolved}}&nbsp;
+   Dropped: {{issues.dropped}}&nbsp;
+  </div>
+ </div>
+ <div class="body">
+  <table class="issue-table">
+   <tr>
+    <th>Description</th>
+    <th>From</th>
+    <th>Status</th>
+   </tr>
+{% for entry in entries %}
+{%  if entry.review %}
+{%   for comment in entry.review.get_all_comments %}
+{%    if comment.issue_opened %}
+   <tr class="issue-{{comment.issue_status|pretty_print_issue_status}}">
+    <td class="description"><a href="#{{comment.id}}">{{comment|char_limit}}</a></td>
+    <td><div class="reviewer"><a href="{% url user entry.review.user %}" class="user">{{entry.review.user|user_displayname}}</a></div></td>
+    <td>{{comment.issue_status|pretty_print_issue_status|capfirst}}</td>
+   </tr>
+{%    endif %}
+{%   endfor %}
+{%  endif %}
+{% endfor %}
+  </table>
+ </div>
+</div>
+{% endbox %}
 
 {% for entry in entries %}
 {%  if entry.review %}
@@ -73,10 +106,12 @@
 <div class="main">
  <div class="banners"></div>
  <div class="header">
+  {% template_hook_point "review-summary-header-pre" %}
   {% if entry.review.ship_it %}<div class="shipit">{% trans "Ship it!" %}</div>{% endif %}
   <div class="collapse-button"></div>
   <div class="reviewer"><a href="{% url user entry.review.user %}" class="user">{{entry.review.user|user_displayname}}</a></div>
   <div class="posted_time">{% blocktrans with entry.review.timestamp|timesince as timestamp_since  and entry.review.timestamp|date:"F jS, Y, P" as timestamp_date %}Posted {{ timestamp_since }} ago ({{ timestamp_date }}){% endblocktrans %}</div>
+  {% template_hook_point "review-summary-header-post" %}
  </div>
  <div class="body">
    <pre class="body_top reviewtext">{{entry.review.body_top|escape}}</pre>
@@ -101,6 +136,9 @@
      </div>
     </dt>
     <dd>
+{% if comment.issue_opened %}
+     <a name="{{comment.id}}">
+{% endif %}
      <pre>{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
      <div id="comment-{{comment.id}}-issue" class="issue-indicator">
@@ -131,6 +169,9 @@
      </div>
     </dt>
     <dd>
+{% if comment.issue_opened %}
+     <a name="{{comment.id}}">
+{% endif %}
      <pre>{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
      <div id="comment-{{comment.id}}-issue" class="issue-indicator">
@@ -170,6 +211,9 @@
      </div>
     </dt>
     <dd>
+{% if comment.issue_opened %}
+     <a name="{{comment.id}}">
+{% endif %}
      <pre class="reviewtext">{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
      <div id="comment-{{comment.id}}-issue" class="issue-indicator">

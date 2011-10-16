@@ -184,6 +184,7 @@ class Site(object):
         #       directories.
         self.mkdir(os.path.join(media_dir, "uploaded"))
         self.mkdir(os.path.join(media_dir, "uploaded", "images"))
+        self.mkdir(os.path.join(media_dir, "ext"))
 
         self.link_pkg_dir("reviewboard",
                           "htdocs/errordocs",
@@ -440,7 +441,6 @@ class Site(object):
 
         try:
             from django.core.management import execute_manager, get_commands
-            from reviewboard.admin.migration import fix_django_evolution_issues
             import reviewboard.settings
 
             if not params:
@@ -448,8 +448,6 @@ class Site(object):
 
             if DEBUG:
                 params.append("--verbosity=0")
-
-            fix_django_evolution_issues(reviewboard.settings)
 
             commands_dir = os.path.join(self.abs_install_dir, 'commands')
 
@@ -527,6 +525,7 @@ class Site(object):
             'sitedomain_escaped': domain_name_escaped,
             'siteid': self.site_id,
             'siteroot': self.site_root,
+            'siteroot_noslash': self.site_root[1:-1],
         }
 
         template = re.sub("@([a-z_]+)@", lambda m: data.get(m.group(1)),
@@ -1582,6 +1581,7 @@ class InstallCommand(Command):
 
         ui.itemized_list(page, None, [
             os.path.join(site.abs_install_dir, 'htdocs', 'media', 'uploaded'),
+            os.path.join(site.abs_install_dir, 'htdocs', 'media', 'ext'),
             os.path.join(site.abs_install_dir, 'data'),
         ])
 
@@ -1643,6 +1643,9 @@ class UpgradeCommand(Command):
             print "Updating database. This may take a while."
             site.sync_database()
             site.migrate_database()
+
+            print "Resetting in-database caches."
+            site.run_manage_command("fixreviewcounts")
 
         print "Upgrade complete."
 

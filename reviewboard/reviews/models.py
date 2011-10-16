@@ -17,15 +17,15 @@ from djblets.util.templatetags.djblets_images import crop_image, thumbnail
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.models import DiffSet, DiffSetHistory, FileDiff
 from reviewboard.attachments.models import FileAttachment
-from reviewboard.reviews.signals import review_request_published, \
-                                        review_request_reopened, \
-                                        review_request_closed, \
-                                        reply_published, review_published
 from reviewboard.reviews.errors import PermissionError
 from reviewboard.reviews.managers import DefaultReviewerManager, \
                                          ReviewGroupManager, \
                                          ReviewRequestManager, \
                                          ReviewManager
+from reviewboard.reviews.signals import review_request_published, \
+                                        review_request_reopened, \
+                                        review_request_closed, \
+                                        reply_published, review_published
 from reviewboard.scmtools.errors import EmptyChangeSetError, \
                                         InvalidChangeNumberError
 from reviewboard.scmtools.models import Repository
@@ -63,14 +63,14 @@ def update_obj_with_changenum(obj, repository, changenum):
 
 
 def truncate(string, num):
-   if len(string) > num:
-      string = string[0:num]
-      i = string.rfind('.')
+    if len(string) > num:
+        string = string[0:num]
+        i = string.rfind('.')
 
-      if i != -1:
-         string = string[0:i + 1]
+        if i != -1:
+            string = string[0:i + 1]
 
-   return string
+    return string
 
 
 class Group(models.Model):
@@ -111,6 +111,17 @@ class Group(models.Model):
                 user.is_superuser or
                 (user.is_authenticated() and
                  self.users.filter(pk=user.pk).count() > 0))
+
+    def is_mutable_by(self, user):
+        """
+        Returns whether or not the user can modify or delete the group.
+
+        The group is mutable by the user if they are  an administrator with
+        proper permissions, or the group is part of a LocalSite and the user is
+        in the admin list.
+        """
+        return (user.has_perm('reviews.change_group') or
+                (self.local_site and self.local_site.is_mutable_by(user)))
 
     def __unicode__(self):
         return self.name
@@ -437,7 +448,7 @@ class ReviewRequest(models.Model):
 
     def get_display_id(self):
         """Gets the ID which should be exposed to the user."""
-        if self.local_site:
+        if self.local_site_id:
             return self.local_id
         else:
             return self.id
@@ -627,29 +638,30 @@ class ReviewRequest(models.Model):
         if self.status == self.PENDING_REVIEW:
             site_profile.decrement_pending_outgoing_request_count()
 
-        people = self.target_people.all()
-        groups = self.target_groups.all()
+        if self.public:
+            people = self.target_people.all()
+            groups = self.target_groups.all()
 
-        Group.incoming_request_count.decrement(groups)
-        LocalSiteProfile.direct_incoming_request_count.decrement(
-            LocalSiteProfile.objects.filter(user__in=people,
-                                            local_site=local_site))
-        LocalSiteProfile.total_incoming_request_count.decrement(
-            LocalSiteProfile.objects.filter(
-                Q(local_site=local_site) &
-                Q(Q(user__review_groups__in=groups) |
-                  Q(user__in=people))))
-        LocalSiteProfile.starred_public_request_count.decrement(
-            LocalSiteProfile.objects.filter(
-                profile__starred_review_requests=self,
-                local_site=local_site))
+            Group.incoming_request_count.decrement(groups)
+            LocalSiteProfile.direct_incoming_request_count.decrement(
+                LocalSiteProfile.objects.filter(user__in=people,
+                                                local_site=local_site))
+            LocalSiteProfile.total_incoming_request_count.decrement(
+                LocalSiteProfile.objects.filter(
+                    Q(local_site=local_site) &
+                    Q(Q(user__review_groups__in=groups) |
+                      Q(user__in=people))))
+            LocalSiteProfile.starred_public_request_count.decrement(
+                LocalSiteProfile.objects.filter(
+                    profile__starred_review_requests=self,
+                    local_site=local_site))
 
         super(ReviewRequest, self).delete(**kwargs)
 
     def can_publish(self):
         return not self.public or get_object_or_none(self.draft) is not None
 
-    def close(self, type, user=None):
+    def close(self, type, user=None, description=None):
         """
         Closes the review request. The type must be one of
         SUBMITTED or DISCARDED.
@@ -661,12 +673,27 @@ class ReviewRequest(models.Model):
         if type not in [self.SUBMITTED, self.DISCARDED]:
             raise AttributeError("%s is not a valid close type" % type)
 
-        self.status = type
-        self.save(update_counts=True)
+        if self.status != type:
+            changedesc = ChangeDescription(public=True, text=description or "")
+            changedesc.record_field_change('status', self.status, type)
+            changedesc.save()
 
-        review_request_closed.send(sender=self.__class__, user=user,
-                                   review_request=self,
-                                   type=type)
+            self.changedescs.add(changedesc)
+            self.status = type
+            self.save(update_counts=True)
+
+            review_request_closed.send(sender=self.__class__, user=user,
+                                       review_request=self,
+                                       type=type)
+        else:
+            # Update submission description.
+            changedesc = self.changedescs.filter(public=True).latest()
+            changedesc.timestamp = datetime.now()
+            changedesc.text = description or ""
+            changedesc.save()
+
+            # Needed to renew last-update.
+            self.save()
 
         try:
             draft = self.draft.get()
@@ -684,8 +711,21 @@ class ReviewRequest(models.Model):
             raise PermissionError
 
         if self.status != self.PENDING_REVIEW:
+            changedesc = ChangeDescription()
+            changedesc.record_field_change('status', self.status,
+                                           self.PENDING_REVIEW)
+
             if self.status == self.DISCARDED:
+                # A draft is needed if reopening a discarded review request.
                 self.public = False
+                changedesc.save()
+                draft = ReviewRequestDraft.create(self)
+                draft.changedesc = changedesc
+                draft.save()
+            else:
+                changedesc.public = True
+                changedesc.save()
+                self.changedescs.add(changedesc)
 
             self.status = self.PENDING_REVIEW
             self.save(update_counts=True)
@@ -772,11 +812,13 @@ class ReviewRequest(models.Model):
             # count for the user.
             site_profile.increment_total_outgoing_request_count()
             old_status = None
+            old_public = False
         else:
             # We need to see if the status has changed, so that means
             # finding out what's in the database.
             r = ReviewRequest.objects.get(pk=self.id)
             old_status = r.status
+            old_public = r.public
 
         if self.status == self.PENDING_REVIEW:
             if old_status != self.status:
@@ -803,22 +845,23 @@ class ReviewRequest(models.Model):
             if old_status != self.status:
                 site_profile.decrement_pending_outgoing_request_count()
 
-            groups = self.target_groups.all()
-            people = self.target_people.all()
+            if old_public:
+                groups = self.target_groups.all()
+                people = self.target_people.all()
 
-            Group.incoming_request_count.decrement(groups)
-            LocalSiteProfile.direct_incoming_request_count.decrement(
-                LocalSiteProfile.objects.filter(user__in=people,
-                                                local_site=local_site))
-            LocalSiteProfile.total_incoming_request_count.decrement(
-                LocalSiteProfile.objects.filter(
-                    Q(local_site=local_site) &
-                    Q(Q(user__review_groups__in=groups) |
-                      Q(user__in=people))))
-            LocalSiteProfile.starred_public_request_count.decrement(
-                LocalSiteProfile.objects.filter(
-                    profile__starred_review_requests=self,
-                    local_site=local_site))
+                Group.incoming_request_count.decrement(groups)
+                LocalSiteProfile.direct_incoming_request_count.decrement(
+                    LocalSiteProfile.objects.filter(user__in=people,
+                                                    local_site=local_site))
+                LocalSiteProfile.total_incoming_request_count.decrement(
+                    LocalSiteProfile.objects.filter(
+                        Q(local_site=local_site) &
+                        Q(Q(user__review_groups__in=groups) |
+                          Q(user__in=people))))
+                LocalSiteProfile.starred_public_request_count.decrement(
+                    LocalSiteProfile.objects.filter(
+                        profile__starred_review_requests=self,
+                        local_site=local_site))
 
     class Meta:
         ordering = ['-last_updated', 'submitter', 'summary']
@@ -1126,6 +1169,15 @@ class ReviewRequestDraft(models.Model):
                 s.caption = s.draft_caption
                 s.save()
 
+        # Now scan through again and set the caption correctly for newly-added
+        # screenshots by copying the draft_caption over. We don't need to
+        # include this in the changedescs here because it's a new screenshot,
+        # and update_list will record the newly-added item.
+        for s in screenshots:
+            if s.caption != s.draft_caption:
+                s.caption = s.draft_caption
+                s.save()
+
         if caption_changes and self.changedesc:
             self.changedesc.fields_changed['screenshot_captions'] = \
                 caption_changes
@@ -1150,6 +1202,15 @@ class ReviewRequestDraft(models.Model):
                     'new': (f.draft_caption,),
                 }
 
+                f.caption = f.draft_caption
+                f.save()
+
+        # Now scan through again and set the caption correctly for newly-added
+        # files by copying the draft_caption over. We don't need to include
+        # this in the changedescs here because it's a new screenshot, and
+        # update_list will record the newly-added item.
+        for f in files:
+            if f.caption != f.draft_caption:
                 f.caption = f.draft_caption
                 f.save()
 
@@ -1253,8 +1314,26 @@ class BaseComment(models.Model):
         else:
             raise Exception("Invalid issue status '%s'" % status)
 
+    def save(self, **kwargs):
+        self.timestamp = datetime.now()
+
+        super(BaseComment, self).save()
+
+        try:
+            # Update the review timestamp, but only if it's a draft.
+            # Otherwise, resolving an issue will change the timestamp of
+            # the review.
+            review = self.review.get()
+
+            if not review.public:
+                review.timestamp = self.timestamp
+                review.save()
+        except Review.DoesNotExist:
+            pass
+
     class Meta:
         abstract = True
+        ordering = ['timestamp']
 
 
 class Comment(BaseComment):
@@ -1314,17 +1393,6 @@ class Comment(BaseComment):
         return "%s#comment%d" % \
             (self.review.get().review_request.get_absolute_url(), self.id)
 
-    def save(self, **kwargs):
-        super(Comment, self).save()
-
-        try:
-            # Update the review timestamp.
-            review = self.review.get()
-            review.timestamp = datetime.now()
-            review.save()
-        except Review.DoesNotExist:
-            pass
-
     def __unicode__(self):
         return self.text
 
@@ -1333,9 +1401,6 @@ class Comment(BaseComment):
             return self.text[0:57] + "..."
         else:
             return self.text
-
-    class Meta:
-        ordering = ['timestamp']
 
 
 class ScreenshotComment(BaseComment):
@@ -1389,22 +1454,8 @@ class ScreenshotComment(BaseComment):
         return "%s#scomment%d" % \
             (self.review.get().review_request.get_absolute_url(), self.id)
 
-    def save(self, **kwargs):
-        super(ScreenshotComment, self).save()
-
-        try:
-            # Update the review timestamp.
-            review = self.review.get()
-            review.timestamp = datetime.now()
-            review.save()
-        except Review.DoesNotExist:
-            pass
-
     def __unicode__(self):
         return self.text
-
-    class Meta:
-        ordering = ['timestamp']
 
 
 class FileAttachmentComment(BaseComment):
@@ -1444,22 +1495,8 @@ class FileAttachmentComment(BaseComment):
         return "%s#fcomment%d" % \
             (self.review.get().review_request.get_absolute_url(), self.id)
 
-    def save(self, **kwargs):
-        super(FileAttachmentComment, self).save()
-
-        try:
-            # Update the review timestamp.
-            review = self.review.get()
-            review.timestamp = datetime.now()
-            review.save()
-        except Review.DoesNotExist:
-            pass
-
     def __unicode__(self):
         return self.text
-
-    class Meta:
-        ordering = ['timestamp']
 
 
 class Review(models.Model):
@@ -1640,6 +1677,12 @@ class Review(models.Model):
 
     def get_absolute_url(self):
         return "%s#review%s" % (self.review_request.get_absolute_url(), self.id)
+
+    def get_all_comments(self, **kwargs):
+        """Return a list of all contained comments of all types."""
+        return (list(self.comments.filter(**kwargs)) +
+                list(self.screenshot_comments.filter(**kwargs)) +
+                list(self.file_attachment_comments.filter(**kwargs)))
 
     class Meta:
         ordering = ['timestamp']

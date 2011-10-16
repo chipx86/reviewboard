@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import Http404
+from django.utils.datastructures import SortedDict
 from django.utils.html import conditional_escape
 from django.utils.translation import ugettext_lazy as _
 from djblets.datagrid.grids import Column, DateTimeColumn, \
@@ -311,6 +312,31 @@ class PendingCountColumn(Column):
         return str(getattr(obj, self.field_name).filter(public=True,
                                                         status='P').count())
 
+class PeopleColumn(Column):
+    def __init__(self, *args, **kwargs):
+        Column.__init__(self, *args, **kwargs)
+        self.label = _("People")
+        self.detailed_label = _("Target People")
+        self.sortable = False
+        self.shrink = False
+
+    def render_data(self, review_request):
+        people = review_request.target_people.all()
+        return reduce(lambda a,d: a+d.username+' ', people, '')
+
+
+class GroupsColumn(Column):
+    def __init__(self, *args, **kwargs):
+        Column.__init__(self, *args, **kwargs)
+        self.label = _("Groups")
+        self.detailed_label = _("Target Groups")
+        self.sortable = False
+        self.shrink = False
+
+    def render_data(self, review_request):
+        groups = review_request.target_groups.all()
+        return reduce(lambda a,d: a+d.name+' ', groups, '')
+
 
 class GroupMemberCountColumn(Column):
     """
@@ -408,6 +434,9 @@ class ReviewRequestDataGrid(DataGrid):
         css_class=lambda r: ageid(r.last_updated))
 
     review_count = ReviewCountColumn()
+
+    target_groups = GroupsColumn()
+    target_people = PeopleColumn()
 
     review_id = Column(_("Review ID"), field_name="id", db_field="id",
                        shrink=True, sortable=True, link=True)
@@ -659,14 +688,16 @@ def get_sidebar_counts(user, local_site):
         'to-me': site_profile.direct_incoming_request_count,
         'starred': site_profile.starred_public_request_count,
         'mine': site_profile.total_outgoing_request_count,
-        'groups': {},
-        'starred_groups': {},
+        'groups': SortedDict(),
+        'starred_groups': SortedDict(),
     }
 
-    for group in Group.objects.filter(users=user, local_site=local_site):
+    for group in Group.objects.filter(
+            users=user, local_site=local_site).order_by('name'):
         counts['groups'][group.name] = group.incoming_request_count
 
-    for group in Group.objects.filter(starred_by=user, local_site=local_site):
+    for group in Group.objects.filter(
+            starred_by=user, local_site=local_site).order_by('name'):
         counts['starred_groups'][group.name] = group.incoming_request_count
 
     return counts

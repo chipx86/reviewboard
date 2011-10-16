@@ -83,8 +83,16 @@ class GeneralSettingsForm(SiteSettingsForm):
         required=False)
 
     search_index_file = forms.CharField(
-        label=_("Search index file"),
-        help_text=_("The file that search index data should be stored in."),
+        label=_("Search index directory"),
+        help_text=_("The directory that search index data should be stored "
+                    "in."),
+        required=False,
+        widget=forms.TextInput(attrs={'size': '50'}))
+
+    cache_backend = forms.CharField(
+        label=_("Cache Backend"),
+        help_text=_("The path to the cache backend."
+                    "Example: 'memcached://127.0.0.1:11211/'"),
         required=False,
         widget=forms.TextInput(attrs={'size': '50'}))
 
@@ -160,7 +168,8 @@ class GeneralSettingsForm(SiteSettingsForm):
                 'fields':  ('server', 'site_media_url',
                             'site_admin_name',
                             'site_admin_email',
-                            'locale_timezone'),
+                            'locale_timezone',
+                            'cache_backend'),
             },
             {
                 'classes': ('wide',),

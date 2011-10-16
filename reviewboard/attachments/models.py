@@ -1,6 +1,7 @@
 import os
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 
@@ -62,7 +63,7 @@ class FileAttachment(models.Model):
                 # Maybe it's on a draft.
                 try:
                     draft = self.drafts.get()
-                except ReviewRequestDraft.DoesNotExist:
+                except ObjectDoesNotExist:
                     draft = self.inactive_drafts.get()
 
                 return draft.review_request

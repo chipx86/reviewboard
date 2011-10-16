@@ -3,7 +3,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.sites.models import Site
-from django.core.mail import EmailMultiAlternatives, mail_admins
+from django.core.mail import EmailMultiAlternatives
 from django.core.urlresolvers import reverse
 from django.template.loader import render_to_string
 from djblets.siteconfig.models import SiteConfiguration
@@ -154,8 +154,11 @@ def send_review_mail(user, review_request, subject, in_reply_to,
 
     from_email = get_email_address_for_user(user)
 
-    recipients = set([from_email])
+    recipients = set()
     to_field = set()
+
+    if from_email:
+        recipients.add(from_email)
 
     if review_request.submitter.is_active:
         recipients.add(get_email_address_for_user(review_request.submitter))
@@ -371,7 +374,9 @@ def mail_new_user(user):
 
     message = SpiffyEmailMessage(subject.strip(), text_message, html_message,
                                  settings.SERVER_EMAIL, settings.SERVER_EMAIL,
-                                 [a for a in settings.ADMINS], None, None)
+                                 [build_email_address(*a)
+                                  for a in settings.ADMINS], None, None)
+
     try:
         message.send()
     except Exception, e:

@@ -8,8 +8,12 @@
   {% star review_request %}
   <div id="summary_wrapper"><label>{% trans "Summary" %}: </label><h1 id="summary" class="editable">{{review_request_details.summary|escape}}</h1></div>
   <p id="status">
-  {% blocktrans with review_request_details.last_updated|timesince as lastupdated and review_request.display_id as review_request_id and review_request.get_absolute_url as review_request_url %}
-    Review Request <a href="{{review_request_url}}">#{{review_request_id}}</a> - updated {{lastupdated}} ago
+  {% blocktrans with review_request.display_id as review_request_id and review_request.get_absolute_url as review_request_url %}
+    Review Request <a href="{{review_request_url}}">#{{review_request_id}}</a> -
+  {% endblocktrans %}
+  {% ifequal review_request.status 'S' %}{% trans "submitted" %}{% endifequal %}{% ifequal review_request.status 'D' %}{% trans "discarded" %}{% endifequal %}{% ifequal review_request.status 'P' %}{% trans "updated" %}{% endifequal %}
+  {% blocktrans with review_request_details.last_updated|timesince as lastupdated %}
+   {{lastupdated}} ago
   {% endblocktrans %}
   </p>
  </div>
@@ -62,6 +66,16 @@
    <td class="label"><label for="repository">{% trans "Repository" %}:</label></td>
    <td class="value"><span id="repository">{{review_request.repository}}</span></td>
   </tr>
+{% for hook in detail_hooks %}
+{%  if forloop.counter0|divisibleby:2 %}
+  <tr>
+{%  endif %}
+  <td class="label"><label for="{{hook.get_field_id}}">{{hook.get_label}}:</label></td>
+  <td class="value"><span id="{{hook.get_field_id}}">{{hook.get_detail}}</span></td>
+{%  if forloop.last or forloop.counter|divisibleby:2 %}
+  </tr>
+{%  endif %}
+{% endfor %}
  </table>
  <div class="content" id="description-value-cell">
   <label for="description">{% trans "Description" %}:</label>

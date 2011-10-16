@@ -102,7 +102,7 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
                           comments) {
     var self = this;
 
-    var table = beginRow.parents("table:first")
+    var table = beginRow.parents("table:first");
     var fileid = table[0].id;
 
     this.filediff = gFileAnchorToId[fileid];
@@ -146,8 +146,7 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
     }
 
     this.anchor = $("<a/>")
-        .attr("name",
-              "file" + this.filediff['id'] + "line" + this.beginLineNum)
+        .attr("name", "file" + this.filediff.id + "line" + this.beginLineNum)
         .addClass("comment-anchor")
         .appendTo(this.el);
 
@@ -1329,6 +1328,11 @@ function toggleExtraWhitespace(init)
 
 
 $(document).ready(function() {
+    if (!window.gRevision) {
+        /* We're not running in the diff viewer. No need for setup. */
+        return;
+    }
+
     gDiff = gReviewRequest.createDiff(gRevision, gInterdiffRevision);
 
     $(document).keypress(function(evt) {

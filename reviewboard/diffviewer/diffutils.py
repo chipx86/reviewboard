@@ -20,6 +20,7 @@ from django.utils.translation import ugettext as _
 
 from djblets.log import log_timed
 from djblets.siteconfig.models import SiteConfiguration
+from djblets.util.contextmanagers import controlled_subprocess
 from djblets.util.misc import cache_memoize
 
 from reviewboard.accounts.models import Profile
@@ -215,15 +216,17 @@ def patch(diff, file, filename):
 
     diff = convert_line_endings(diff)
 
-    # XXX: catch exception if Popen fails?
     newfile = '%s-new' % oldfile
-    p = subprocess.Popen(['patch', '-o', newfile, oldfile],
-                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    p.stdin.write(diff)
-    p.stdin.close()
-    patch_output = p.stdout.read()
-    failure = p.wait()
+
+    process = subprocess.Popen(['patch', '-o', newfile, oldfile],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+
+    with controlled_subprocess("patch", process) as p:
+        p.stdin.write(diff)
+        p.stdin.close()
+        patch_output = p.stdout.read()
+        failure = p.wait()
 
     if failure:
         f = open("%s.diff" %

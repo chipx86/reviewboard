@@ -1,11 +1,12 @@
 import logging
 import re
-import urllib
+from time import time
+from urllib import quote as urllib_quote
 
 import dateutil.parser
 from django.conf import settings
 from django.contrib import auth
-from django.contrib.auth.models import User, SiteProfileNotAvailable
+from django.contrib.auth.models import User
 from django.contrib.sites.models import Site
 from django.core.exceptions import PermissionDenied, ObjectDoesNotExist
 from django.db.models import Q
@@ -13,9 +14,12 @@ from django.http import HttpResponseRedirect, HttpResponse, \
                         HttpResponseNotModified
 from django.template.defaultfilters import timesince
 from django.utils.translation import ugettext as _
+from djblets.extensions.base import RegisteredExtension
+from djblets.extensions.resources import ExtensionResource
 from djblets.siteconfig.models import SiteConfiguration
 from djblets.util.decorators import augment_method_from
 from djblets.util.http import get_http_requested_mimetype, \
+                              get_modified_since, \
                               set_last_modified, http_date
 from djblets.webapi.core import WebAPIResponseFormError, \
                                 WebAPIResponsePaginated, \
@@ -33,11 +37,12 @@ from djblets.webapi.resources import WebAPIResource as DjbletsWebAPIResource, \
 
 from reviewboard import get_version_string, get_package_version, is_release
 from reviewboard.accounts.models import Profile
+from reviewboard.attachments.forms import UploadFileForm
+from reviewboard.attachments.models import FileAttachment
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_diff_files
 from reviewboard.diffviewer.forms import EmptyDiffError
-from reviewboard.attachments.forms import UploadFileForm
-from reviewboard.attachments.models import FileAttachment
+from reviewboard.extensions.base import get_extension_manager
 from reviewboard.reviews.errors import PermissionError
 from reviewboard.reviews.forms import UploadDiffForm, UploadScreenshotForm
 from reviewboard.reviews.models import BaseComment, Comment, DiffSet, \
@@ -52,6 +57,7 @@ from reviewboard.scmtools.errors import AuthenticationError, \
                                         EmptyChangeSetError, \
                                         FileNotFoundError, \
                                         InvalidChangeNumberError, \
+                                        SCMError, \
                                         RepositoryNotFoundError, \
                                         UnknownHostKeyError, \
                                         UnverifiedCertificateError
@@ -705,20 +711,39 @@ class ReviewReplyDiffCommentResource(BaseDiffCommentResource):
                 }
             }
 
-        new_comment = self.model(filediff=comment.filediff,
-                                 interfilediff=comment.interfilediff,
-                                 reply_to=comment,
-                                 text=text,
-                                 first_line=comment.first_line,
-                                 num_lines=comment.num_lines)
+        q = self.get_queryset(request, *args, **kwargs)
+        q = q.filter(Q(reply_to=comment) & Q(review=reply))
+
+        try:
+            new_comment = q.get()
+
+            # This already exists. Go ahead and update, but we're going to
+            # redirect the user to the right place.
+            is_new = False
+        except self.model.DoesNotExist:
+            new_comment = self.model(filediff=comment.filediff,
+                                     interfilediff=comment.interfilediff,
+                                     reply_to=comment,
+                                     first_line=comment.first_line,
+                                     num_lines=comment.num_lines)
+            is_new = True
+
+        new_comment.text = text
         new_comment.save()
 
-        reply.comments.add(new_comment)
-        reply.save()
-
-        return 201, {
+        data = {
             self.item_result_key: new_comment,
         }
+
+        if is_new:
+            reply.comments.add(new_comment)
+            reply.save()
+
+            return 201, data
+        else:
+            return 303, data, {
+                'Location': self.get_href(new_comment, request, *args, **kwargs)
+            }
 
     @webapi_check_local_site
     @webapi_login_required
@@ -1048,7 +1073,7 @@ class FileDiffResource(WebAPIResource):
             return DOES_NOT_EXIST
 
         resp = HttpResponse(filediff.diff, mimetype='text/x-patch')
-        filename = '%s.patch' % urllib.quote(filediff.source_file)
+        filename = '%s.patch' % urllib_quote(filediff.source_file)
         resp['Content-Disposition'] = 'inline; filename=%s' % filename
         set_last_modified(resp, filediff.diffset.timestamp)
 
@@ -1114,32 +1139,33 @@ class ChangeResource(WebAPIResource):
     For ``summary``, ``description``, ``testing_done`` and ``branch`` fields,
     the following detail keys will be available:
 
-      * ``old``: The old value of the field.
-      * ``new``: The new value of the field.
+    * ``old``: The old value of the field.
+    * ``new``: The new value of the field.
 
-    For ``diff` fields:
+    For ``diff`` fields:
 
-      * ``added``: The diff that was added.
+    * ``added``: The diff that was added.
 
     For ``bugs_closed`` fields:
 
-      * ``old``: A list of old bugs.
-      * ``new``: A list of new bugs.
-      * ``removed``: A list of bugs that were removed, if any.
-      * ``added``: A list of bugs that were added, if any.
+    * ``old``: A list of old bugs.
+    * ``new``: A list of new bugs.
+    * ``removed``: A list of bugs that were removed, if any.
+    * ``added``: A list of bugs that were added, if any.
 
-    For ``screenshots``, ``target_people`` and ``target_groups`` fields:
+    For ``file_attachments``, ``screenshots``, ``target_people`` and
+    ``target_groups`` fields:
 
-      * ``old``: A list of old items.
-      * ``new``: A list of new items.
-      * ``removed``: A list of items that were removed, if any.
-      * ``added``: A list of items that were added, if any.
+    * ``old``: A list of old items.
+    * ``new``: A list of new items.
+    * ``removed``: A list of items that were removed, if any.
+    * ``added``: A list of items that were added, if any.
 
     For ``screenshot_captions`` fields:
 
-      * ``old``: The old caption.
-      * ``new``: The new caption.
-      * ``screenshot``: The screenshot that was updated.
+    * ``old``: The old caption.
+    * ``new``: The new caption.
+    * ``screenshot``: The screenshot that was updated.
     """
     model = ChangeDescription
     name = 'change'
@@ -1202,7 +1228,8 @@ class ChangeResource(WebAPIResource):
                 for key in ('new', 'old', 'added', 'removed'):
                     if key in data:
                         data[key] = [bug[0] for bug in data[key]]
-            elif field in ('summary', 'description', 'testing_done', 'branch'):
+            elif field in ('summary', 'description', 'testing_done', 'branch',
+                           'status'):
                 if 'old' in data:
                     data['old'] = data['old'][0]
 
@@ -1974,7 +2001,7 @@ class ReviewGroupResource(WebAPIResource):
     Review groups are groups of users that can be listed as an intended
     reviewer on a review request.
 
-    Review groups cannot be created, deleted, or modified through the API.
+    Review groups cannot be created or modified through the API.
     """
     model = Group
     fields = {
@@ -2026,7 +2053,10 @@ class ReviewGroupResource(WebAPIResource):
     model_object_key = 'name'
     autogenerate_etags = True
 
-    allowed_methods = ('GET',)
+    allowed_methods = ('GET', 'DELETE')
+
+    def has_delete_permissions(self, request, group, *args, **kwargs):
+        return group.is_mutable_by(request.user)
 
     def get_queryset(self, request, is_list=False, local_site_name=None,
                      *args, **kwargs):
@@ -2105,6 +2135,22 @@ class ReviewGroupResource(WebAPIResource):
         any groups with a name or display name starting with ``dev``.
         """
         pass
+
+    @webapi_check_local_site
+    @webapi_login_required
+    @webapi_response_errors(DOES_NOT_EXIST, NOT_LOGGED_IN, PERMISSION_DENIED)
+    def delete(self, request, *args, **kwargs):
+        """Deletes a review group."""
+        try:
+            group = self.get_object(request, *args, **kwargs)
+        except ObjectDoesNotExist:
+            return DOES_NOT_EXIST
+
+        if not self.has_delete_permissions(request, group):
+            return _no_access_error(request.user)
+
+        group.delete()
+        return 204, {}
 
 review_group_resource = ReviewGroupResource()
 
@@ -2423,6 +2469,13 @@ class RepositoryResource(WebAPIResource):
                 'type': str,
                 'description': 'The username used to access the repository.',
             },
+            'archive_name': {
+                'type': bool,
+                'description': "Whether or not the (non-user-visible) name of "
+                               "the repository should be changed so that it "
+                               "(probably) won't conflict with any future "
+                               "repository names.",
+            },
         },
     )
     def update(self, request, trust_host=False, *args, **kwargs):
@@ -2465,6 +2518,16 @@ class RepositoryResource(WebAPIResource):
 
             if error_result is not None:
                 return error_result
+
+        # If the API call is requesting that we archive the name, we'll give it
+        # a name which won't overlap with future user-named repositories. This
+        # should usually be used just before issuing a DELETE call, which will
+        # set the visibility flag to False
+        if kwargs.get('archive_name', False):
+            # This should be sufficiently unlikely to create duplicates. time()
+            # will use up a max of 8 characters, so we slice the name down to
+            # make the result fit in 64 characters
+            repository.name = 'ar:%s:%x' % (repository.name[:50], int(time()))
 
         repository.save()
 
@@ -2656,6 +2719,13 @@ class BaseScreenshotResource(WebAPIResource):
 
     def serialize_thumbnail_url_field(self, obj):
         return obj.get_thumbnail_url()
+
+    def serialize_caption_field(self, obj):
+        # We prefer 'caption' here, because when creating a new screenshot, it
+        # won't be full of data yet (and since we're posting to screenshots/,
+        # it doesn't hit DraftScreenshotResource). DraftScreenshotResource will
+        # prefer draft_caption, in case people are changing an existing one.
+        return obj.caption or obj.draft_caption
 
     @webapi_check_local_site
     @webapi_login_required
@@ -2936,6 +3006,14 @@ class BaseFileAttachmentResource(WebAPIResource):
 
     def serialize_url_field(self, obj):
         return obj.get_absolute_url()
+
+    def serialize_caption_field(self, obj):
+        # We prefer 'caption' here, because when creating a new screenshot, it
+        # won't be full of data yet (and since we're posting to screenshots/,
+        # it doesn't hit DraftFileAttachmentResource).
+        # DraftFileAttachmentResource will prefer draft_caption, in case people
+        # are changing an existing one.
+        return obj.caption or obj.draft_caption
 
     @webapi_check_local_site
     @webapi_login_required
@@ -3977,21 +4055,40 @@ class ReviewReplyScreenshotCommentResource(BaseScreenshotCommentResource):
                 }
             }
 
-        new_comment = self.model(screenshot=comment.screenshot,
-                                 reply_to=comment,
-                                 x=comment.x,
-                                 y=comment.y,
-                                 w=comment.w,
-                                 h=comment.h,
-                                 text=text)
+        q = self.get_queryset(request, *args, **kwargs)
+        q = q.filter(Q(reply_to=comment) & Q(review=reply))
+
+        try:
+            new_comment = q.get()
+
+            # This already exists. Go ahead and update, but we're going to
+            # redirect the user to the right place.
+            is_new = False
+        except self.model.DoesNotExist:
+            new_comment = self.model(screenshot=comment.screenshot,
+                                     reply_to=comment,
+                                     x=comment.x,
+                                     y=comment.y,
+                                     w=comment.w,
+                                     h=comment.h)
+            is_new = True
+
+        new_comment.text = text
         new_comment.save()
 
-        reply.screenshot_comments.add(new_comment)
-        reply.save()
-
-        return 201, {
+        data = {
             self.item_result_key: new_comment,
         }
+
+        if is_new:
+            reply.screenshot_comments.add(new_comment)
+            reply.save()
+
+            return 201, data
+        else:
+            return 303, data, {
+                'Location': self.get_href(new_comment, request, *args, **kwargs)
+            }
 
     @webapi_check_local_site
     @webapi_login_required
@@ -4068,11 +4165,11 @@ review_reply_screenshot_comment_resource = \
     ReviewReplyScreenshotCommentResource()
 
 
-class BaseFileAttachmentCommentResource(WebAPIResource):
+class BaseFileAttachmentCommentResource(BaseCommentResource):
     """A base resource for file comments."""
     model = FileAttachmentComment
     name = 'file_attachment_comment'
-    fields = {
+    fields = dict({
         'id': {
             'type': int,
             'description': 'The numeric ID of the comment.',
@@ -4099,10 +4196,9 @@ class BaseFileAttachmentCommentResource(WebAPIResource):
             'type': 'reviewboard.webapi.resources.UserResource',
             'description': 'The user who made the comment.',
         },
-    }
+    }, **BaseCommentResource.fields)
 
     uri_object_key = 'comment_id'
-    last_modified_field = 'timestamp'
     allowed_methods = ('GET',)
 
     def get_queryset(self, request, *args, **kwargs):
@@ -4198,9 +4294,15 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
                 'description': 'The comment text.',
             },
         },
+        optional = {
+            'issue_opened': {
+                'type': bool,
+                'description': 'Whether the comment opens an issue.',
+            },
+        },
     )
     def create(self, request, file_attachment_id=None, text=None,
-               *args, **kwargs):
+               issue_opened=False, *args, **kwargs):
         """Creates a file comment on a review.
 
         This will create a new comment on a file as part of a review.
@@ -4229,7 +4331,15 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
                 }
             }
 
-        new_comment = self.model(file_attachment=file_attachment, text=text)
+        new_comment = self.model(file_attachment=file_attachment,
+                                 text=text,
+                                 issue_opened=bool(issue_opened))
+
+        if issue_opened:
+            new_comment.issue_status = BaseComment.OPEN
+        else:
+            new_comment.issue_status = None
+
         new_comment.save()
 
         review.file_attachment_comments.add(new_comment)
@@ -4248,6 +4358,14 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
                 'type': str,
                 'description': 'The comment text.',
             },
+            'issue_opened': {
+                'type': bool,
+                'description': 'Whether or not the comment opens an issue.',
+            },
+            'issue_status': {
+                'type': ('dropped', 'open', 'resolved'),
+                'description': 'The status of an open issue.',
+            }
         },
     )
     def update(self, request, *args, **kwargs):
@@ -4263,10 +4381,23 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
         except ObjectDoesNotExist:
             return DOES_NOT_EXIST
 
+        # Determine whether or not we're updating the issue status.
+        # If so, delegate to the base_comment_resource.
+        if base_comment_resource.should_update_issue_status(file_comment,
+                                                            **kwargs):
+            return base_comment_resource.update_issue_status(request, self,
+                                                             *args, **kwargs)
+
         if not review_resource.has_modify_permissions(request, review):
             return _no_access_error(request.user)
 
-        for field in ('text',):
+        # If we've updated the comment from having no issue opened,
+        # to having an issue opened, we need to set the issue status
+        # to OPEN.
+        if not file_comment.issue_opened and kwargs.get('issue_opened', False):
+            file_comment.issue_status = BaseComment.OPEN
+
+        for field in ('text', 'issue_opened'):
             value = kwargs.get(field, None)
 
             if value is not None:
@@ -4367,16 +4498,36 @@ class ReviewReplyFileAttachmentCommentResource(BaseFileAttachmentCommentResource
                 }
             }
 
-        new_comment = self.model(file=comment.file,
-                                 text=text)
+        q = self.get_queryset(request, *args, **kwargs)
+        q = q.filter(Q(reply_to=comment) & Q(review=reply))
+
+        try:
+            new_comment = q.get()
+
+            # This already exists. Go ahead and update, but we're going to
+            # redirect the user to the right place.
+            is_new = False
+        except self.model.DoesNotExist:
+            new_comment = self.model(file_attachment=comment.file_attachment,
+                                     reply_to=comment)
+            is_new = True
+
+        new_comment.text = text
         new_comment.save()
 
-        reply.file_comments.add(new_comment)
-        reply.save()
-
-        return 201, {
+        data = {
             self.item_result_key: new_comment,
         }
+
+        if is_new:
+            reply.file_attachment_comments.add(new_comment)
+            reply.save()
+
+            return 201, data
+        else:
+            return 303, data, {
+                'Location': self.get_href(new_comment, request, *args, **kwargs)
+            }
 
     @webapi_check_local_site
     @webapi_login_required
@@ -5560,7 +5711,9 @@ class ReviewRequestResource(WebAPIResource):
     @webapi_login_required
     @webapi_response_errors(NOT_LOGGED_IN, PERMISSION_DENIED, INVALID_USER,
                             INVALID_REPOSITORY, CHANGE_NUMBER_IN_USE,
-                            INVALID_CHANGE_NUMBER, EMPTY_CHANGESET)
+                            INVALID_CHANGE_NUMBER, EMPTY_CHANGESET,
+                            REPO_AUTHENTICATION_ERROR, REPO_INFO_ERROR,
+                            MISSING_REPOSITORY)
     @webapi_request_fields(
         required={
             'repository': {
@@ -5654,6 +5807,10 @@ class ReviewRequestResource(WebAPIResource):
             return 201, {
                 self.item_result_key: review_request
             }
+        except AuthenticationError:
+            return REPO_AUTHENTICATION_ERROR
+        except RepositoryNotFoundError:
+            return MISSING_REPOSITORY
         except ChangeNumberInUseError, e:
             return CHANGE_NUMBER_IN_USE, {
                 'review_request': e.review_request
@@ -5662,6 +5819,10 @@ class ReviewRequestResource(WebAPIResource):
             return INVALID_CHANGE_NUMBER
         except EmptyChangeSetError:
             return EMPTY_CHANGESET
+        except SCMError, e:
+            logging.error("Got unexpected SCMError when creating repository: %s"
+                          % e, exc_info=1)
+            return REPO_INFO_ERROR
 
     @webapi_check_local_site
     @webapi_login_required
@@ -5684,9 +5845,16 @@ class ReviewRequestResource(WebAPIResource):
                                'repositories that support server-side '
                                'changesets.',
             },
+            'description': {
+                'type': str,
+                'description': 'The description of the update. Should only be '
+                               'used if the review request have been submitted '
+                               'or discarded.',
+            },
         },
     )
-    def update(self, request, status=None, changenum=None, *args, **kwargs):
+    def update(self, request, status=None, changenum=None, description=None,
+               *args, **kwargs):
         """Updates the status of the review request.
 
         The only supported update to a review request's resource is to change
@@ -5716,11 +5884,12 @@ class ReviewRequestResource(WebAPIResource):
             return _no_access_error(request.user)
 
         if (status is not None and
-            review_request.status != string_to_status(status)):
+            (review_request.status != string_to_status(status) or
+             review_request.status != ReviewRequest.PENDING_REVIEW)):
             try:
                 if status in self._close_type_map:
                     review_request.close(self._close_type_map[status],
-                                         request.user)
+                                         request.user, description)
                 elif status == 'pending':
                     review_request.reopen(request.user)
                 else:
@@ -5905,7 +6074,7 @@ class ReviewRequestResource(WebAPIResource):
         This is an override of WebAPIResource.get_href which will use the
         local_id instead of the pk.
         """
-        if obj.local_site:
+        if obj.local_site_id:
             local_site_name = obj.local_site.name
         else:
             local_site_name = None
@@ -6105,6 +6274,9 @@ class SessionResource(WebAPIResource):
 session_resource = SessionResource()
 
 
+extension_resource = ExtensionResource(get_extension_manager())
+
+
 class RootResource(DjbletsRootResource):
     """Links to all the main resources, including URI templates to resources
     anywhere in the tree.
@@ -6116,6 +6288,7 @@ class RootResource(DjbletsRootResource):
     """
     def __init__(self, *args, **kwargs):
         super(RootResource, self).__init__([
+            extension_resource,
             repository_resource,
             review_group_resource,
             review_request_resource,
@@ -6147,6 +6320,7 @@ register_resource_for_model(
 register_resource_for_model(DiffSet, diffset_resource)
 register_resource_for_model(FileDiff, filediff_resource)
 register_resource_for_model(Group, review_group_resource)
+register_resource_for_model(RegisteredExtension, extension_resource)
 register_resource_for_model(Repository, repository_resource)
 register_resource_for_model(
     Review,

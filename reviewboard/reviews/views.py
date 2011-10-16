@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 
 from django.conf import settings
-from django.contrib.auth.models import User, SiteProfileNotAvailable
+from django.contrib.auth.models import User
 from django.contrib.sites.models import Site
 from django.core.urlresolvers import reverse
 from django.db.models import Q
@@ -30,12 +30,14 @@ from djblets.util.misc import get_object_or_none
 from reviewboard.accounts.decorators import check_login_required, \
                                             valid_prefs_required
 from reviewboard.accounts.models import ReviewRequestVisit, Profile
+from reviewboard.attachments.forms import UploadFileForm, CommentFileForm
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_file_chunks_in_range
 from reviewboard.diffviewer.models import DiffSet
 from reviewboard.diffviewer.views import view_diff, view_diff_fragment, \
                                          exception_traceback_string
-from reviewboard.attachments.forms import UploadFileForm, CommentFileForm
+from reviewboard.extensions.hooks import DashboardHook, \
+                                         ReviewRequestDetailHook
 from reviewboard.reviews.datagrids import DashboardDataGrid, \
                                           GroupDataGrid, \
                                           ReviewRequestDataGrid, \
@@ -45,12 +47,14 @@ from reviewboard.reviews.errors import OwnershipError
 from reviewboard.reviews.forms import NewReviewRequestForm, \
                                       UploadDiffForm, \
                                       UploadScreenshotForm
-from reviewboard.reviews.models import Comment, ReviewRequest, \
+from reviewboard.reviews.models import BaseComment, Comment, \
+                                       ReviewRequest, \
                                        Review, Group, Screenshot, \
                                        ScreenshotComment
 from reviewboard.scmtools.core import PRE_CREATION
 from reviewboard.scmtools.errors import SCMError
 from reviewboard.site.models import LocalSite
+from reviewboard.webapi.encoder import status_to_string
 
 
 #####
@@ -330,9 +334,10 @@ def review_detail(request,
         return HttpResponseNotModified()
 
     changedescs = review_request.changedescs.filter(public=True)
+    latest_changedesc = None
 
     try:
-        latest_changedesc = changedescs.latest('timestamp')
+        latest_changedesc = changedescs.latest()
         latest_timestamp = latest_changedesc.timestamp
     except ChangeDescription.DoesNotExist:
         latest_timestamp = None
@@ -397,6 +402,15 @@ def review_detail(request,
 
                     if 'new' in info:
                         info['new'][0] = mark_safe(info['new'][0])
+
+                # Make status human readable.
+                if name == 'status':
+                    if 'old' in info:
+                        info['old'][0] = status_to_string(info['old'][0])
+
+                    if 'new' in info:
+                        info['new'][0] = status_to_string(info['new'][0])
+
             elif name == "screenshot_captions":
                 change_type = 'screenshot_captions'
             elif name == "file_captions":
@@ -428,16 +442,42 @@ def review_detail(request,
 
     entries.sort(key=lambda item: item['timestamp'])
 
+    close_description = ''
+
+    if latest_changedesc and 'status' in latest_changedesc.fields_changed:
+        status = latest_changedesc.fields_changed['status']['new'][0]
+
+        if status in (ReviewRequest.DISCARDED, ReviewRequest.SUBMITTED):
+            close_description = latest_changedesc.text
+
+    issues = {
+        'total': 0,
+        'open': 0,
+        'resolved': 0,
+        'dropped': 0
+    }
+
+    for entry in entries:
+        if 'review' in entry:
+            for comment in entry['review'].get_all_comments(issue_opened=True):
+                issues['total'] += 1
+                issues[BaseComment.issue_status_to_string(
+                        comment.issue_status)] += 1
+
     response = render_to_response(
         template_name,
         RequestContext(request, _make_review_request_context(review_request, {
             'draft': draft,
+            'detail_hooks': ReviewRequestDetailHook.hooks,
             'review_request_details': draft or review_request,
             'entries': entries,
             'last_activity_time': last_activity_time,
             'review': review,
             'request': request,
+            'latest_changedesc': latest_changedesc,
+            'close_description': close_description,
             'PRE_CREATION': PRE_CREATION,
+            'issues': issues,
         })))
     set_etag(response, etag)
 
@@ -562,7 +602,9 @@ def dashboard(request,
     else:
         grid = DashboardDataGrid(request, local_site=local_site)
 
-    return grid.render_to_response(template_name)
+    return grid.render_to_response(template_name, extra_context={
+        'sidebar_hooks': DashboardHook.hooks,
+    })
 
 
 @check_login_required
@@ -1138,10 +1180,10 @@ def user_infobox(request, username,
     if etag_if_none_match(request, etag):
         return HttpResponseNotModified()
 
-    response = render_to_response(template_name, {
+    response = render_to_response(template_name, RequestContext(request, {
         'show_profile': show_profile,
-        'user': user,
-    })
+        'requested_user': user,
+    }))
     set_etag(response, etag)
 
     return response
