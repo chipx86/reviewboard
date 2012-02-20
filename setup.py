@@ -13,7 +13,7 @@ from ez_setup import use_setuptools
 use_setuptools()
 
 from setuptools import setup, find_packages
-from setuptools.command.build_py import build_py
+from setuptools.command.egg_info import egg_info
 from distutils.command.install_data import install_data
 from distutils.command.install import INSTALL_SCHEMES
 from distutils.core import Command
@@ -51,10 +51,18 @@ class osx_install_data(install_data):
         install_data.finalize_options(self)
 
 
-class BuildRB(build_py):
+class BuildEggInfo(egg_info):
     def run(self):
-        self.run_command('build_media')
-        build_py.run(self)
+        # Conditionally build the media files if there's a settings_local
+        # file. If there isn't one, we assume this is a new dev tree, in which
+        # prepare-dev hasn't been run yet.
+        #
+        # This is necessary since setup.py develop must be run before
+        # prepare-dev.py, but develop will call egg_info.
+        if os.path.exists('settings_local.py'):
+            self.run_command('build_media')
+
+        egg_info.run(self)
 
 
 class BuildMedia(Command):
@@ -76,7 +84,7 @@ class BuildMedia(Command):
 
 cmdclasses = {
     'install_data': install_data,
-    'build_py': BuildRB,
+    'egg_info': BuildEggInfo,
     'build_media': BuildMedia,
 }
 
@@ -133,7 +141,7 @@ setup(name=PACKAGE_NAME,
           'Django>=1.3.1',
           'django_evolution>=0.6.5',
           'Djblets>=0.7alpha0.dev',
-          'django-compress',
+          'django-pipeline==1.1.27',
           'Pygments>=1.4',
           'flup',
           'paramiko>=1.7.6',
@@ -141,6 +149,7 @@ setup(name=PACKAGE_NAME,
           'python-memcached',
           'pytz',
           'recaptcha-client',
+          'requests>=0.10.1',
       ],
       dependency_links = [
           "http://downloads.reviewboard.org/mirror/",

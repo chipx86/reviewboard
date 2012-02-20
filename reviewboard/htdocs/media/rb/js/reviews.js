@@ -209,10 +209,12 @@ var CommentIssueManager = function() {
     // Helper function to set the state of a comment
     function requestState(comment, state) {
         comment.ready(function() {
+	    var old_issue_status = comment.issue_status;
             comment.issue_status = state;
             comment.save({
                 success: function(rsp) {
-                    notifyCallbacks(comment.id, comment.issue_status);
+                    notifyCallbacks(comment.id, comment.issue_status,
+				    old_issue_status);
 
                     /*
                      * We don't want the current user to receive the
@@ -232,14 +234,15 @@ var CommentIssueManager = function() {
      * Helper function that notifies all callbacks registered for
      * a particular comment
      */
-    function notifyCallbacks(comment_id, issue_status) {
+    function notifyCallbacks(comment_id, issue_status, old_issue_status) {
         var i;
 
         for (i = 0; i < callbacks[comment_id].length; i++) {
-            callbacks[comment_id][i](issue_status);
+            callbacks[comment_id][i](issue_status, old_issue_status);
         }
     }
-};
+}();
+
 
 var gCommentIssueManager = new CommentIssueManager();
 
@@ -674,6 +677,22 @@ $.fn.commentIssue = function(review_id, comment_id, comment_type,
         }
     }
 
+    self.update_issue_summary_table = function(new_status, old_status) {
+	var comment_id = self.comment_id;
+	var entry = $('#summary-table-entry-' + comment_id);
+
+	// Remove old status class and decrement counter.
+	entry.removeClass(old_status);
+	var old_counter = $('#' + old_status + '-counter');
+	old_counter.text(parseInt(old_counter.text(), 10) - 1);
+
+	// Add new status class, update text, and increment counter.
+	entry.addClass(new_status);
+	entry.find('.status').text(new_status);
+	var new_counter = $('#' + new_status + '-counter');
+	new_counter.text(parseInt(new_counter.text(), 10) + 1);
+    }
+
     var open_state = {
         enter: function() {
             $(".issue-button.reopen", self).hide();
@@ -733,6 +752,10 @@ $.fn.commentIssue = function(review_id, comment_id, comment_type,
     // Register to watch updates on the comment issue state
     gCommentIssueManager
         .registerCallback(self.comment_id, self.enter_state);
+
+    // Register to update issue summary table
+    gCommentIssueManager
+	.registerCallback(self.comment_id, self.update_issue_summary_table);
 
     return self;
 }
@@ -848,6 +871,14 @@ $.fn.floatReplyDraftBanner = function() {
                 return;
             }
 
+            /*
+             * Something about the below causes the "Publish" button to never
+             * show up on IE8. Turn it into a fixed box on IE.
+             */
+            if ($.browser.msie) {
+                return;
+            }
+
             if (floatSpacer == null) {
                 floatSpacer = self.wrap($("<div/>")).parent();
                 updateSize();
@@ -931,12 +962,12 @@ $.fn.commentDlg = function() {
     var saveButton = $("#comment_save", this)
         .click(function() {
             comment.setText(textField.val());
-            comment.issue_opened = issueField.attr('checked') ? 1 : 0;
+            comment.issue_opened = issueField[0].checked;
             comment.save();
             self.close();
         });
 
-    var textField    = $("#comment_text", draftForm)
+    var textField = $("#comment_text", draftForm)
         .keydown(function(e) { e.stopPropagation(); })
         .keypress(function(e) {
             e.stopPropagation();
@@ -1096,7 +1127,7 @@ $.fn.commentDlg = function() {
     this.open = function(fromEl) {
         this
             .css({
-                top: parseInt(this.css("top")) - SLIDE_DISTANCE,
+                top: parseInt(this.css("top"), 10) - SLIDE_DISTANCE,
                 opacity: 0
             })
             .show()
@@ -1122,7 +1153,7 @@ $.fn.commentDlg = function() {
     this.close = function() {
         if (self.is(":visible")) {
             textField.val("");
-            issueField.attr("checked", false)
+            issueField[0].checked = false;
 
             self
                 .setDirty(false)
@@ -1246,7 +1277,7 @@ $.fn.commentDlg = function() {
 
         comment.ready(function() {
             textField.val(comment.text);
-            issueField.attr('checked', comment.issue_opened)
+            issueField[0].checked = comment.issue_opened;
 
             self.setDirty(false);
 
@@ -1425,8 +1456,12 @@ $.reviewForm = function(review) {
 
         $(".comment-editable", dlg).each(function() {
             var editable = $(this);
+            var comment = editable.data('comment');
+            var issueOpened = editable.next()[0].checked;
 
-            if (editable.inlineEditor("dirty")) {
+            if (editable.inlineEditor("dirty") ||
+                issueOpened != comment.issue_opened) {
+                comment.issue_opened = issueOpened;
                 $.funcQueue("reviewForm").add(function() {
                     editable
                         .one("saved", $.funcQueue("reviewForm").next)
@@ -1436,7 +1471,7 @@ $.reviewForm = function(review) {
         });
 
         $.funcQueue("reviewForm").add(function() {
-            review.ship_it = $("#id_shipit", dlg)[0].checked ? 1 : 0;
+            review.ship_it = $("#id_shipit", dlg)[0].checked;
             review.body_top = $(".body-top", dlg).text();;
             review.body_bottom = $(".body-bottom", dlg).text();;
 
@@ -1507,7 +1542,8 @@ $.fn.reviewFormCommentEditor = function(comment) {
                     self.trigger("saved");
                 }
             });
-        });
+        })
+        .data('comment', comment);
 };
 
 
@@ -2463,10 +2499,16 @@ $(document).ready(function() {
         $(this).closest(".box").toggleClass('collapsed');
     });
 
-    /* Expand all reviews */
+    /* Expand all reviews and issue summary table */
     $("#expand-all").click(function() {
         $(".collapsed").removeClass("collapsed");
         return false;
+    });
+
+    /* Collapse all reviews and issue summary table */
+    $("#collapse-all").click(function() {
+	$(".box").addClass("collapsed");
+	return false;
     });
 
     gCommentDlg = $("#comment-detail")
@@ -2556,6 +2598,19 @@ $(document).ready(function() {
     }
 
     loadDiffFragments("diff_fragments", "comment_container");
+
+    $(".summary-table-description").click(function() {
+        /*
+         * Extract the href attribute and remove the leading
+         * '#', then attach '#comment-' and '-issue' to
+         * find the comment's location. Then find the
+         * closest box class and uncollapse it.
+         */
+        var issueId = '#comment-' +
+                      $(this).find("a.summary-anchor").attr("href").slice(1) +
+                      '-issue';
+        $(issueId).closest(".box").removeClass("collapsed");
+    });
 });
 
 // vim: set et:sw=4:

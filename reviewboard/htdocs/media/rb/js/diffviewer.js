@@ -157,6 +157,9 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
         for (i = 0; i < comments.length; i++) {
             var comment = comments[i];
 
+            // We load in encoded text, so decode it.
+            comment.text = $("<div/>").html(comment.text).text();
+
             if (comment.localdraft) {
                 this._createDraftComment(comment.comment_id, comment.text);
             } else {
@@ -934,13 +937,13 @@ function findLineNumRow(table, linenum, startRow, endRow) {
 
             for (k = 1; k <= (high-low) / 2; k++) {
                 row = table.rows[row_offset + i + k];
-                if (row && parseInt(row.getAttribute('line'))) {
+                if (row && parseInt(row.getAttribute('line'), 10)) {
                     i = i + k;
                     found = true;
                     break;
                 } else {
                     row = table.rows[row_offset + i - k];
-                    if (row && parseInt(row.getAttribute('line'))) {
+                    if (row && parseInt(row.getAttribute('line'), 10)) {
                         i = i - k;
                         found = true;
                         break;
@@ -949,7 +952,7 @@ function findLineNumRow(table, linenum, startRow, endRow) {
             }
 
             if (found) {
-                value = parseInt(row.getAttribute('line'));
+                value = parseInt(row.getAttribute('line'), 10);
             } else {
                 return null;
             }
@@ -962,7 +965,7 @@ function findLineNumRow(table, linenum, startRow, endRow) {
             var guessRow = table.rows[guessRowNum];
 
             if (guessRow
-                && parseInt(guessRow.getAttribute('line')) == linenum) {
+                && parseInt(guessRow.getAttribute('line'), 10) == linenum) {
                 /* We found it using maths! */
                 return guessRow;
             }

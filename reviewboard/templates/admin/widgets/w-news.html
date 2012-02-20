@@ -1,6 +1,6 @@
 {% load i18n %}
 <div class="news-content-widget">
- <img src="{{media_url}}rb/images/spinner.gif?{{media_serial}}"
+ <img src="{{MEDIA_URL}}rb/images/spinner.gif?{{MEDIA_SERIAL}}"
       class="loading-indicator" width="16" height="16" border="0" alt="" />
  {% trans "Loading..." %}
 </div>
@@ -13,7 +13,7 @@ $(document).ready(function () {
         });
 
     $(".news-content-widget").load("feed/news/", function() {
-        $('.admin-extras').masonry('reload');
+        $('#admin-extras').masonry('reload');
     });
 });
 </script>

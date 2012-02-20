@@ -48,8 +48,16 @@
 <ul class="controls">
 {% if entries %}
  <li>
-  <img width="14" height="14" border="0" alt="" src="/media/rb/images/expand.png">
-  <a href="#" id="expand-all">{% trans "Expand All" %}</a>
+  <a href="#" id="expand-all">
+   <img width="14" height="14" border="0" alt="" src="{{MEDIA_URL}}rb/images/expand.png?{{MEDIA_SERIAL}}">
+   <span>{% trans "Expand All" %}</span>
+  </a>
+ </li>
+ <li>
+  <a href="#" id="collapse-all">
+   <img width="14" height="14" border="0" alt="" src="{{MEDIA_URL}}rb/images/collapse.png?{{MEDIA_SERIAL}}">
+   <span>{% trans "Collapse All" %}</span>
+  </a>
  </li>
 {% endif %}
 </ul>
@@ -57,42 +65,53 @@
 </div>
 {% endbox %}
 
-{% box %}
+{% if issues.total > 0 %}
+{% box "collapsed" %}
 <div class="main">
  <div class="header">
   <div class="collapse-button"></div>
-  <div class="issue-summary">{% trans "Issue Summary:" %}</div>
+  <div class="issue-summary">{% trans "Issue Summary" %}:</div>
   <div class="counters">
-   <b>Total: {{issues.total}}&nbsp;</b>
-   Open: {{issues.open}}&nbsp;
-   Resolved: {{issues.resolved}}&nbsp;
-   Dropped: {{issues.dropped}}&nbsp;
+   <strong>
+    <div class="counter">{% trans "Total" %}:</div>
+    <div id="total-counter">{{issues.total}}</div>
+   </strong>
+   <div class="counter">{% trans "Open" %}:</div>
+   <div id="open-counter">{{issues.open}}</div>
+   <div class="counter">{% trans "Resolved" %}:</div>
+   <div id="resolved-counter">{{issues.resolved}}</div>
+   <div class="counter">{% trans "Dropped" %}:</div>
+   <div id="dropped-counter">{{issues.dropped}}</div>
   </div>
+  <div class="clearfix"></div>
  </div>
  <div class="body">
-  <table class="issue-table">
-   <tr>
-    <th>Description</th>
-    <th>From</th>
-    <th>Status</th>
-   </tr>
+  <div class="issue-table-wrapper">
+   <table class="issue-table">
+    <tr>
+     <th>{% trans "Description" %}</th>
+     <th>{% trans "From" %}</th>
+     <th>{% trans "Status" %}</th>
+    </tr>
 {% for entry in entries %}
 {%  if entry.review %}
 {%   for comment in entry.review.get_all_comments %}
 {%    if comment.issue_opened %}
-   <tr class="issue-{{comment.issue_status|pretty_print_issue_status}}">
-    <td class="description"><a href="#{{comment.id}}">{{comment|char_limit}}</a></td>
-    <td><div class="reviewer"><a href="{% url user entry.review.user %}" class="user">{{entry.review.user|user_displayname}}</a></div></td>
-    <td>{{comment.issue_status|pretty_print_issue_status|capfirst}}</td>
-   </tr>
+    <tr id="summary-table-entry-{{comment.id}}" class="issue {{comment.issue_status|pretty_print_issue_status}}">
+     <td class="summary-table-description"><a class="summary-anchor" href="#{{comment.id}}">{{comment}}</a></td>
+     <td class="reviewer"><a href="{% url user entry.review.user %}" class="user">{{entry.review.user|user_displayname}}</a></td>
+     <td class="status">{{comment.issue_status|pretty_print_issue_status|capfirst}}</td>
+    </tr>
 {%    endif %}
 {%   endfor %}
 {%  endif %}
 {% endfor %}
-  </table>
+   </table>
+  </div>
  </div>
 </div>
 {% endbox %}
+{% endif %}
 
 {% for entry in entries %}
 {%  if entry.review %}
@@ -155,8 +174,8 @@
      <div class="file-attachment">
       <a href="{{comment.file_attachment.get_absolute_url}}">{% spaceless %}
        <img src="{{comment.file_attachment.icon_url}}" />
-        <span class="filename">{{comment.file_attachment.filename}}</span>
-	  </a>
+       <span class="filename">{{comment.file_attachment.filename}}</span>
+      </a>
 {% if draft and comment.file_attachment.draft_caption %}
       <p class="caption">{{comment.file_attachment.draft_caption}}</p>
 {% else %}
@@ -259,7 +278,7 @@
   <ul>
 {% for fieldinfo in entry.changeinfo %}
    <li><label>{{fieldinfo.title}}</label>
-{%  ifequal fieldinfo.type "changed" %}
+{%  if fieldinfo.type == "changed" %}
 {%   if fieldinfo.multiline %}
 	  <p><label>{% trans "Changed from:" %}</label></p>
       <pre>{{fieldinfo.info.old.0}}</pre>
@@ -268,8 +287,8 @@
 {%   else %}
 {%    blocktrans with fieldinfo.info.old.0 as old_value and fieldinfo.info.new.0 as new_value %}changed from <i>{{old_value}}</i> to <i>{{new_value}}</i>{% endblocktrans %}</p>
 {%   endif %}
-{%  endifequal %}
-{%  ifequal fieldinfo.type "add_remove" %}
+{%  endif %}
+{%  if fieldinfo.type == "add_remove" %}
     <ul>
 {%   if fieldinfo.info.removed %}
 {% definevar "removed_values" %}
@@ -284,14 +303,14 @@
 <li>{% blocktrans %}added {{added_values}}{% endblocktrans %}</li>
 {%   endif %}
     </ul>
-{%  endifequal %}
-{%  ifequal fieldinfo.type "screenshot_captions" %}
+{%  endif %}
+{%  if fieldinfo.type == "screenshot_captions" %}
     <ul>
 {%   for info in fieldinfo.info.values %}
      <li>{% blocktrans with info.old.0 as old_value and info.new.0 as new_value %}changed from <i>{{old_value}}</i> to <i>{{new_value}}</i>{% endblocktrans %}</li>
 {%   endfor %}
     </ul>
-{%  endifequal %}
+{%  endif %}
    </li>
 {% endfor %}
   </ul>

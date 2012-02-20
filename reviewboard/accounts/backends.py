@@ -41,10 +41,10 @@ class AuthBackend(object):
     supports_change_password = False
 
     def authenticate(self, username, password):
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_or_create_user(self, username):
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_user(self, user_id):
         return get_object_or_none(User, pk=user_id)
@@ -56,9 +56,9 @@ class AuthBackend(object):
         on the backend. This will only be called if
         :py:attr:`supports_change_password` is ``True``.
 
-        By default, this will raise NotImplemented.
+        By default, this will raise NotImplementedError.
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     def update_name(self, user):
         """Updates the user's name on the backend.
@@ -264,9 +264,12 @@ class LDAPBackend(AuthBackend):
                 # toss and I went with a left split for the first name and
                 # dumped the remainder into the last name field.  The system
                 # admin can handle the corner cases.
-                if settings.LDAP_FULL_NAME_ATTRIBUTE:
-                    full_name = user_info[settings.LDAP_FULL_NAME_ATTRIBUTE][0]
-                    first_name, last_name = full_name.split(' ', 1)
+                try:
+                    if settings.LDAP_FULL_NAME_ATTRIBUTE:
+                        full_name = user_info[settings.LDAP_FULL_NAME_ATTRIBUTE][0]
+                        first_name, last_name = full_name.split(' ', 1)
+                except AttributeError:
+                    pass
 
                 if settings.LDAP_EMAIL_DOMAIN:
                     email = u'%s@%s' % (username, settings.LDAP_EMAIL_DOMAIN)

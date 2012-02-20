@@ -301,7 +301,8 @@ def review_detail(request,
             visited.timestamp = datetime.now()
             visited.save()
 
-        profile, profile_is_new = Profile.objects.get_or_create(user=request.user)
+        profile, profile_is_new = \
+            Profile.objects.get_or_create(user=request.user)
         starred = review_request in profile.starred_review_requests.all()
 
         # Unlike review above, this covers replies as well.
@@ -313,7 +314,6 @@ def review_detail(request,
             review_timestamp = last_draft_review.timestamp
         except Review.DoesNotExist:
             pass
-
 
     draft = review_request.get_draft(request.user)
 
@@ -355,13 +355,14 @@ def review_detail(request,
             state = 'collapsed'
 
         try:
-            latest_reply = temp_review.public_replies().latest('timestamp').timestamp
+            latest_reply = \
+                temp_review.public_replies().latest('timestamp').timestamp
         except Review.DoesNotExist:
             latest_reply = None
 
         # Mark as expanded if there is a reply newer than last_visited
         if latest_reply and last_visited and last_visited < latest_reply:
-          state = ''
+            state = ''
 
         entries.append({
             'review': temp_review,
@@ -381,6 +382,7 @@ def review_detail(request,
                 # We don't hard-code URLs in the bug info, since the
                 # tracker may move, but we can do it here.
                 if (name == "bugs_closed" and
+                    review_request.repository and
                     review_request.repository.bug_tracker):
                     bug_url = review_request.repository.bug_tracker
                     for field in info:
@@ -898,6 +900,7 @@ def preview_review_request_email(
     format,
     text_template_name='notifications/review_request_email.txt',
     html_template_name='notifications/review_request_email.html',
+    changedesc_id=None,
     local_site_name=None):
     """
     Previews the e-mail message that would be sent for an initial
@@ -911,6 +914,13 @@ def preview_review_request_email(
     if not review_request:
         return response
 
+    extra_context = {}
+
+    if changedesc_id:
+        changedesc = get_object_or_404(ChangeDescription, pk=changedesc_id)
+        extra_context['change_text'] = changedesc.text
+        extra_context['changes'] = changedesc.fields_changed
+
     siteconfig = SiteConfiguration.objects.get_current()
 
     if format == 'text':
@@ -923,12 +933,12 @@ def preview_review_request_email(
         raise Http404
 
     return HttpResponse(render_to_string(template_name,
-        RequestContext(request, {
+        RequestContext(request, dict({
             'review_request': review_request,
             'user': request.user,
             'domain': Site.objects.get_current().domain,
             'domain_method': siteconfig.get("site_domain_method"),
-        }),
+        }, **extra_context)),
     ), mimetype=mimetype)
 
 
@@ -1139,7 +1149,6 @@ def search(request,
         result_ids = [searcher.doc(hit.doc).get('id') \
                       for hit in searcher.search(parser.parse(query), 100).scoreDocs]
 
-
     searcher.close()
 
     results = ReviewRequest.objects.filter(id__in=result_ids,
@@ -1173,7 +1182,9 @@ def user_infobox(request, username,
 
     show_profile = user.is_profile_visible(request.user)
 
-    etag = ':'.join([user.first_name, user.last_name, user.email,
+    etag = ':'.join([user.first_name.encode('ascii', 'replace'),
+                     user.last_name.encode('ascii', 'replace'),
+                     user.email.encode('ascii', 'replace'),
                      str(user.last_login), str(settings.AJAX_SERIAL),
                      str(show_profile)])
 
