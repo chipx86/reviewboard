@@ -57,7 +57,7 @@ def check_updates_required():
 
     updates_required = []
 
-    if not _install_fine:
+    if 0 and not _install_fine:
         site_dir = os.path.dirname(settings.HTDOCS_ROOT)
         devel_install = (os.path.exists(os.path.join(settings.LOCAL_ROOT,
                                                      'manage.py')))
