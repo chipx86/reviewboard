@@ -55,10 +55,11 @@
  ****************************************************************************/
 .actions-container {
   background: @review-request-action-bg;
-  border-bottom: 1px @review-request-action-border-color solid;
+  border: 1px @review-request-action-border-color solid;
   float: right;
   width: 100%;
   .border-radius(@box-inner-border-radius @box-inner-border-radius 0 0);
+  .box-sizing(border-box);
 
   &>ul {
     min-height: 2em;
@@ -125,6 +126,16 @@
 
     &.primary:active {
       background-color: @review-request-action-primary-active-bg;
+    }
+
+    &.action-view-diff {
+      background: #FFFFEE;
+      font-size: 105%;
+
+      a {
+        padding-left: 1.5em;
+        padding-right: 1.5em;
+      }
     }
   }
 
@@ -231,8 +242,9 @@
    */
   @details-width: 300px;
 
-  background-color: #fefadf;
+  background-color: @review-request-bg;
   background-image: url('@{img_base}/review_request_box_top_bg.png');
+  border: 0;
 
   label {
     color: @review-request-label-color;
@@ -251,7 +263,7 @@
   }
 
   .box-inner {
-    background-image: url('@{img_base}/review_request_box_bottom_bg.png');
+    background-image: none;
   }
 
   .content {
@@ -299,8 +311,11 @@
   }
 
   .main {
+    border: 1px @review-request-border-color solid;
+    border-top: 0;
+    .border-radius(0 0 @box-border-radius @box-border-radius);
     clear: both;
-    padding: 0;
+    padding: 0.5em;
   }
 
   #required-field-legend {
@@ -570,10 +585,43 @@
  * Reviews
  ****************************************************************************/
 
+#reviews {
+  margin-left: 0.5em;
+  margin-right: 0.5em;
+
+  .box {
+    margin: 1.5em 0;
+  }
+
+  .box-container {
+    padding-left: 60px;
+    width: auto;
+  }
+
+  .box-statuses {
+    float: left;
+
+    .box-status {
+      border: 2px #CCC solid;
+      .border-radius(50%);
+      overflow: hidden;
+    }
+  }
+
+  > .changedesc,
+  > .review {
+    clear: both;
+  }
+}
+
 .box {
   &.collapsed {
     .body {
       display: none;
+    }
+
+    .box-inner {
+      background: #ECECEE;
     }
 
     .banner {
@@ -592,26 +640,32 @@
 }
 
 .review {
+  @review-box-border-color: #AAAAAA;
+
   .box {
-    background-color: #e9edf5;
-    background-image: url('@{img_base}/review_box_top_bg.png');
+    background: none;
+    border: 0;
+
+    .box-main {
+      padding: 0;
+    }
   }
 
-  .banner {
-    margin-top: 10px;
+  .banners {
+    .banner {
+      border-left: 0;
+      border-right: 0;
+      margin-top: 10px;
 
-    &.floating {
-      border-top: 0;
-      margin-top: 0;
+      &.floating {
+        border-top: 0;
+        margin-top: 0;
+      }
     }
   }
 
   .body {
-    background-color: #FAFAFA;
-    border: 1px #AAAAAA solid;
     clear: both;
-    margin: 5px;
-    padding: 10px;
 
     pre {
       .pre-wrap;
@@ -628,19 +682,29 @@
     }
   }
 
+  .body-top-comment-section,
+  .body-bottom-comment-section {
+    padding: 0 3em;
+  }
+
   .box-inner {
-    background-image: url('@{img_base}/review_box_bottom_bg.png') !important;
-    min-height: 32px;
+    background: #FCFCFF;
+    border: 1px @review-box-border-color solid;
+    min-height: 50px;
   }
 
   .controls {
     list-style: none;
     margin: 0;
-    padding: 0 8px 4px 8px;
-    text-align: right;
+    padding: 0;
+    text-align: left;
 
     a {
+      color: black;
       text-decoration: none;
+      background: #E6E6E6;
+      padding: 0.7em 1.4em;
+      .border-radius(@box-border-radius);
     }
 
     li {
@@ -651,12 +715,16 @@
   .comments, .review-comments {
     border: 0;
 
-    dd {
-      margin-bottom: 20px;
+    & > dd {
+      margin: 3em;
     }
 
-    dt thead th {
-      font-weight: normal;
+    & > dt {
+      margin-top: 6em;
+
+      thead th {
+        font-weight: normal;
+      }
     }
 
     .filename a {
@@ -667,6 +735,8 @@
     .file-attachment {
       background: #F0F0F0;
       border: 1px #C0C0C0 solid;
+      border-left: 0;
+      border-right: 0;
       padding: 5px;
 
       .file-attachment-comment-header {
@@ -716,12 +786,19 @@
       }
     }
 
-    .sidebyside th {
-      /*
-       * The line numbers aren't clickable in the comment fragments in reviews,
-       * so show a standard cursor instead of a pointer cursor.
-       */
-      cursor: initial;
+    .sidebyside {
+      th {
+        /*
+         * The line numbers aren't clickable in the comment fragments in
+         * reviews, so show a standard cursor instead of a pointer cursor.
+         */
+        cursor: initial;
+      }
+
+      .filename-row th {
+        background: #F0F0F0;
+        border-top: 1px #CCCCCC solid;
+      }
     }
   }
 
@@ -730,6 +807,7 @@
   }
 
   .header {
+    margin: 5px;
     padding: 2px 4px 4px 4px;
 
     a {
@@ -740,8 +818,9 @@
 
   .reviewer {
     float: left;
+    font-size: 110%;
     font-weight: bold;
-    padding-top: 2px;
+    padding-top: 1px;
 
     a {
       position: relative;
@@ -754,7 +833,7 @@
   }
 
   .reply-comments {
-    margin: 20px 0 0 0;
+    margin: 2.5em 0 0 0;
     padding: 0;
 
     &>li {
@@ -763,8 +842,6 @@
       .review-comments-inline();
 
       dl {
-        border-left: 2px #D0D0D0 solid;
-
         /*
          * Set a border-bottom to prevent a bug in IE where, without a
          * border-bottom, the content of the dl will shift left by the
@@ -836,7 +913,7 @@
 .changedesc {
   &.box {
     background-color: #fefadf;
-    background-image: url('@{img_base}/review_request_box_top_bg.png');
+    border: 1px @review-request-border-color solid;
   }
 
   .body {
@@ -1169,8 +1246,8 @@
   }
 
   .box-inner {
-    background-image: url('@{img_base}/review_request_box_bottom_bg.png') !important;
-    min-height: 32px;
+    background: none;
+    min-height: 50px;
   }
 
   .header {
@@ -1184,10 +1261,11 @@
     b {
       float: left;
       font-weight: bold;
+      font-size: 110%;
     }
 
     .reviewer {
-      padding-top: 2px;
+      padding-top: 1px;
     }
 
     .posted_time {
@@ -1807,7 +1885,7 @@
 
   &.dropped {
     background: @issue-discarded-bg;
-    border: 1px solid @issue-discarded-border-color;
+    border-top: 1px @issue-discarded-border-color solid;
 
     .back-to-issue-summary, .back-to-issue-summary:visited {
       color: @issue-discarded-link-color;
@@ -1816,7 +1894,7 @@
 
   &.open {
     background: @issue-opened-bg;
-    border: 1px solid @issue-opened-border-color;
+    border-top: 1px @issue-opened-border-color solid;
 
     .back-to-issue-summary, .back-to-issue-summary:visited {
       color: @issue-opened-link-color;
@@ -1825,7 +1903,7 @@
 
   &.resolved {
     background: @issue-resolved-bg;
-    border: 1px solid @issue-resolved-border-color;
+    border-top: 1px @issue-resolved-border-color solid;
 
     .back-to-issue-summary, .back-to-issue-summary:visited {
       color: @issue-resolved-link-color;
@@ -1971,10 +2049,20 @@
   width: 100%;
 
   tr {
+    &:last-child td {
+      &.status {
+        .border-radius(0 0 @box-border-radius 0);
+      }
+
+      &.summary-table-description {
+        .border-radius(0 0 0 @box-border-radius);
+      }
+    }
+
     td {
       border-width: 0 0 1px 0;
       border-style: solid;
-      padding: 5px 5px;
+      padding: 5px 8px;
       vertical-align: top;
 
       a {
@@ -1990,13 +2078,13 @@
 
   thead {
     th {
-      background: url("@{djblets_img_base}/datagrid/header_bg.png") repeat-x bottom left;
+      background: #EEE;
       border-color: #999;
       border-style: solid;
       border-width: 1px 0;
       cursor: pointer;
       height: 21px;
-      padding: 2px 5px;
+      padding: 2px 8px;
       text-align: left;
       white-space: nowrap;
 
@@ -2007,10 +2095,12 @@
 
     .description-header {
       border-left-width: 1px;
+      .border-radius(@box-border-radius 0 0 0);
     }
 
     .status-header {
       border-right-width: 1px;
+      .border-radius(0 @box-border-radius 0 0);
     }
   }
 
@@ -2103,11 +2193,19 @@
     }
 
     .filters {
-      margin: 3px 0 0 0;
+      margin: 1em 0 1.5em 0;
 
       .filter-wrapper {
         display: inline;
-        margin: 0 4px;
+        margin: 0 0.5em;
+
+        &:first-child {
+          margin-left: 0;
+        }
+
+        select {
+          margin-left: 0.2em;
+        }
       }
     }
   }

@@ -30,7 +30,7 @@
 {%   endif %}
 {%   include "reviews/review_request_actions_primary.html" %}
 {%   if has_diffs %}
-   <li class="primary"><a href="{% url 'view-diff' review_request.display_id %}#index_header">{% trans "View Diff" %}</a></li>
+   <li class="primary action-view-diff"><a href="{% url 'view-diff' review_request.display_id %}#index_header">{% trans "View Diff" %}</a></li>
 {%   endif %}
   </ul>
  </div>
@@ -58,6 +58,7 @@
 {%  endbox "review-request" %}
 </div>
 
+<div id="reviews">
 {%  for entry in entries %}
 {%   if entry.review %}
 {%    include "reviews/boxes/review.html" %}
@@ -66,6 +67,7 @@
 {%   endif %}
 {%  endfor %}
 {% endblock content %}
+</div>
 
 {% block scripts-post %}
 {{block.super}}
